@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import socket
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -63,9 +64,17 @@ class ElkClient:
         topic: str | None = None,
         subtype: str | None = None,
         failure: bool | None = None,
+        redact_keys: Iterable[str] | None = None,
     ) -> bool:
-        """Ship one structured event to ELK; falls back to stdlib logging on failure."""
+        """Ship one structured event to ELK; falls back to stdlib logging on failure.
+
+        ``redact_keys`` removes the listed keys from the payload before the
+        document is built — used to keep secrets (access tokens, JWTs, etc.)
+        out of the index even if a caller forgets to scrub them.
+        """
         payload = dict(data or {})
+        for key in redact_keys or ():
+            payload.pop(key, None)
         document = {
             "@timestamp": datetime.now(UTC).isoformat(),
             "event_type": event_type,

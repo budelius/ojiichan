@@ -7,12 +7,14 @@ requires-python = ">=3.11"
 dependencies = [
     "elasticsearch>=8.0,<9.0",
     "httpx>=0.27",
+    "mcp>=1.0",
     "python-dotenv>=1.0",
     "sentry-sdk>=2.22",
 ]
 
 [project.scripts]
 ojiichan = "ojiichan.cli:main"
+ojiichan-mcp = "ojiichan_mcp.server:main"
 
 [dependency-groups]
 dev = [

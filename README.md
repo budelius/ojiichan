@@ -78,6 +78,57 @@ except Exception as exc:
     raise
 ```
 
+## MCP server
+
+Ojiichan also ships a local stdio MCP server so coding agents can query diagnostics and run repeatable test/build checks without hardcoding shell snippets.
+
+Run it manually:
+
+```bash
+uv run ojiichan-mcp
+```
+
+Example MCP client config:
+
+```json
+{
+  "mcpServers": {
+    "ojiichan": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/Users/budelius/Documents/Projects/dev-ops/ojiichan",
+        "run",
+        "ojiichan-mcp"
+      ]
+    }
+  }
+}
+```
+
+Exposed tools:
+
+- `elk_health`
+- `elk_logs`
+- `emit_elk_event`
+- `bugsink_health`
+- `bugsink_issues`
+- `create_bead_from_issue`
+- `xcode_build`
+- `xcode_test`
+
+For the Stoz3n Mac Designed-for-iPad thread tests, an agent can call `xcode_test` with:
+
+```json
+{
+  "project_path": "/Users/budelius/Documents/Projects/STOZ3N/stoz3n-ios-chat",
+  "scheme": "Stoz3nChat",
+  "destination": "platform=macOS,arch=arm64",
+  "only_testing": "Stoz3nChatTests/TimelineViewModelTests",
+  "allow_provisioning_updates": true
+}
+```
+
 ## Notes
 
 - Bugsink ingestion uses the normal Sentry SDK via `SENTRY_DSN`.
