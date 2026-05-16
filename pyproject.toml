@@ -1,0 +1,32 @@
+[project]
+name = "ojiichan"
+version = "0.1.0"
+description = "Reusable diagnostics toolkit for ELK, Bugsink/Sentry, and issue handoff workflows."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "elasticsearch>=8.0,<9.0",
+    "httpx>=0.27",
+    "python-dotenv>=1.0",
+    "sentry-sdk>=2.22",
+]
+
+[project.scripts]
+ojiichan = "ojiichan.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
