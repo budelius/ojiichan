@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+from ojiichan import ElkClient
 from ojiichan_mcp.server import mcp
+
+
+def test_ojiichan_import() -> None:
+    assert ElkClient.__name__ == "ElkClient"
 
 
 def test_mcp_server_exposes_expected_tools() -> None:

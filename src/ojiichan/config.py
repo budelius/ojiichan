@@ -6,10 +6,12 @@ import os
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
+from .credentials import get_secret
+
 
 def env(name: str, default: str | None = None, *, prefix: str = "OJIICHAN") -> str | None:
-    """Return prefixed env var first, then the conventional unprefixed name."""
-    return os.getenv(f"{prefix}_{name}") or os.getenv(name) or default
+    """Return prefixed env var first, then Locke/env-backed conventional value."""
+    return os.getenv(f"{prefix}_{name}") or get_secret(name) or default
 
 
 def env_bool(name: str, default: bool = False) -> bool:

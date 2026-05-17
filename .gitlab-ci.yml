@@ -1,0 +1,63 @@
+stages:
+  - lint
+  - publish
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  paths:
+    - .cache/pip
+
+lint:
+  stage: lint
+  image: python:3.13-slim
+  script:
+    - pip install ruff
+    - ruff check .
+  rules:
+    - if: $CI_MERGE_REQUEST_ID
+    - if: $CI_COMMIT_BRANCH == "dev"
+
+publish:
+  stage: publish
+  image: python:3.13-slim
+  script:
+    - pip install hatch twine
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        # Tagged release -- use version from pyproject.toml as-is
+        hatch build
+      else
+        # Branch push -- PEP 440 dev version: X.Y.Z.dev<pipeline_id>
+        BASE_VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+        sed -i "s/^version = \".*\"/version = \"${BASE_VERSION}.dev${CI_PIPELINE_IID}\"/" pyproject.toml
+        hatch build
+      fi
+
+    # Publish to GitLab package registry. GitLab's PyPI endpoint does not
+    # support twine --skip-existing, so allow duplicate tag retries to continue
+    # to the PyPI publish step.
+    - |
+      if ! TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*; then
+        if [ -n "$CI_COMMIT_TAG" ]; then
+          echo "WARNING: GitLab package upload failed; continuing for tag retry (package may already exist)." >&2
+        else
+          exit 1
+        fi
+      fi
+
+    # Publish to PyPI (tagged releases only). Tagged release pipelines must
+    # have PYPI_API_TOKEN configured; otherwise downstream projects cannot
+    # install ojiichan from pypi.org.
+    - |
+      if [ -n "$CI_COMMIT_TAG" ]; then
+        if [ -z "$PYPI_API_TOKEN" ]; then
+          echo "ERROR: PYPI_API_TOKEN is required for tagged releases so ojiichan is published to pypi.org." >&2
+          exit 1
+        fi
+        TWINE_PASSWORD=${PYPI_API_TOKEN} TWINE_USERNAME=__token__ twine upload --verbose --skip-existing dist/*
+      fi
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

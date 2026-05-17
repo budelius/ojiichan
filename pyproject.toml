@@ -1,9 +1,21 @@
 [project]
 name = "ojiichan"
 version = "0.1.0"
-description = "Reusable diagnostics toolkit for ELK, Bugsink/Sentry, and issue handoff workflows."
+description = "Pseekoo diagnostics toolkit for ELK, Bugsink/Sentry, and issue handoff workflows."
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Martin Wieser", email = "martin.wieser@pseekoo.com" }]
 requires-python = ">=3.11"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Logging",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
 dependencies = [
     "elasticsearch>=8.0,<9.0",
     "httpx>=0.27",
@@ -11,6 +23,16 @@ dependencies = [
     "python-dotenv>=1.0",
     "sentry-sdk>=2.22",
 ]
+
+[project.optional-dependencies]
+vault = [
+    "locke>=0.5.2",
+]
+
+[project.urls]
+Homepage = "https://gitlab.com/pseekoo/ojiichan"
+Repository = "https://gitlab.com/pseekoo/ojiichan"
+Issues = "https://gitlab.com/pseekoo/ojiichan/-/issues"
 
 [project.scripts]
 ojiichan = "ojiichan.cli:main"
@@ -32,3 +54,9 @@ select = ["E", "F", "I", "UP", "B"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ojiichan", "src/ojiichan_mcp"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/ojiichan", "src/ojiichan_mcp", "README.md", "LICENSE", "locke.json", "pyproject.toml"]
