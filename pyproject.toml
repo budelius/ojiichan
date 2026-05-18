@@ -30,9 +30,9 @@ vault = [
 ]
 
 [project.urls]
-Homepage = "https://gitlab.com/pseekoo/ojiichan"
-Repository = "https://gitlab.com/pseekoo/ojiichan"
-Issues = "https://gitlab.com/pseekoo/ojiichan/-/issues"
+Homepage = "https://gitlab.com/martin-wieser/ojiichan"
+Repository = "https://gitlab.com/martin-wieser/ojiichan"
+Issues = "https://gitlab.com/martin-wieser/ojiichan/-/issues"
 
 [project.scripts]
 ojiichan = "ojiichan.cli:main"

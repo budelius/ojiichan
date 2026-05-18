@@ -111,7 +111,7 @@ For Xcode projects, an agent can call `xcode_test` with a local `project_path`, 
 
 ## Release
 
-Publishing is handled by GitLab CI in the public `pseekoo/ojiichan` repository:
+Publishing is handled by GitLab CI in the public `martin-wieser/ojiichan` repository:
 
 - pushes to the default branch publish a PEP 440 dev build to the GitLab PyPI registry;
 - tags matching `vX.Y.Z` publish the release to the GitLab PyPI registry and to pypi.org;
@@ -129,4 +129,4 @@ git push origin main --tags
 - Bugsink ingestion uses the normal Sentry SDK via `SENTRY_DSN`.
 - Bugsink issue reads use the canonical read API at `/api/canonical/0/issues/` and require `BUGSINK_API_TOKEN`.
 - Beads integration is intentionally optional; `ojiichan.beads` shells out only when `bead`/`beads` is installed.
-- The public distribution and import package are both `ojiichan`; the GitLab repository can live under the `pseekoo` group without changing Python names.
+- The public distribution and import package are both `ojiichan`.
