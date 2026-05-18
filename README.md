@@ -120,7 +120,8 @@ Publishing is handled by GitLab CI in the public `martin-wieser/ojiichan` reposi
 To release the current version:
 
 ```bash
-git tag v0.1.0
+VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+git tag "v${VERSION}"
 git push origin main --tags
 ```
 
