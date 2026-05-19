@@ -9,8 +9,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-from .bugsink import check_bugsink
+from .bugsink import BugsinkClient, check_bugsink
 from .elk import ElkClient, check_elk
+from .sentry import SentryApiClient
 
 
 def _status_glyph(status: str) -> str:
@@ -76,6 +77,29 @@ def cmd_logs(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_resolve_issue(args: argparse.Namespace) -> int:
+    if args.backend == "bugsink":
+        payload = BugsinkClient().resolve_issue(args.issue_id)
+    elif args.backend == "sentry":
+        payload = SentryApiClient().resolve_issue(args.issue_id)
+    else:
+        try:
+            payload = BugsinkClient().resolve_issue(args.issue_id)
+            if not payload.get("ok"):
+                payload = SentryApiClient().resolve_issue(args.issue_id)
+        except Exception:
+            payload = SentryApiClient().resolve_issue(args.issue_id)
+
+    if args.json:
+        _print_json(payload)
+    else:
+        print("resolved" if payload.get("ok") else "not resolved")
+        if not payload.get("ok"):
+            for error in payload.get("errors") or []:
+                print(f"  {error}")
+    return 0 if payload.get("ok") else 1
+
+
 def cmd_emit(args: argparse.Namespace) -> int:
     data = json.loads(args.data) if args.data else {}
     ok = ElkClient(service=args.service).log_event(
@@ -119,6 +143,12 @@ def build_parser() -> argparse.ArgumentParser:
     emit.add_argument("--service")
     emit.add_argument("--failure", action="store_true")
     emit.set_defaults(func=cmd_emit)
+
+    resolve = sub.add_parser("resolve-issue", help="Resolve a Bugsink/Sentry issue by id")
+    resolve.add_argument("issue_id")
+    resolve.add_argument("--backend", choices=["auto", "bugsink", "sentry"], default="auto")
+    resolve.add_argument("--json", action="store_true")
+    resolve.set_defaults(func=cmd_resolve_issue)
 
     return parser
 

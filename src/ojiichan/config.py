@@ -87,6 +87,21 @@ class BugsinkConfig:
         return f"https://{self.host}/projects/{self.project_id}/"
 
 
+@dataclass(frozen=True)
+class SentryApiConfig:
+    auth_token: str | None
+    base_url: str = "https://sentry.io"
+    timeout: float = 10
+
+    @classmethod
+    def from_env(cls) -> SentryApiConfig:
+        return cls(
+            auth_token=env("SENTRY_AUTH_TOKEN"),
+            base_url=(env("SENTRY_BASE_URL", "https://sentry.io") or "https://sentry.io").rstrip("/"),
+            timeout=float(env("SENTRY_TIMEOUT", "10") or "10"),
+        )
+
+
 def parse_sentry_dsn(dsn: str) -> tuple[str | None, str | None]:
     """Extract Bugsink/Sentry host and project id from a DSN."""
     try:

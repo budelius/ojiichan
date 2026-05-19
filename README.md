@@ -35,6 +35,8 @@ ojiichan health --hours 6
 ojiichan logs --hours 2 --topic matrix --failures-only
 ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
+ojiichan resolve-issue 12345 --backend bugsink
+ojiichan resolve-issue 98765 --backend sentry
 ```
 
 ## Library
@@ -67,6 +69,50 @@ except Exception as exc:
     )
     raise
 ```
+
+## Issue resolution
+
+Ojiichan can resolve issues through Bugsink or Sentry APIs:
+
+```python
+from ojiichan import BugsinkClient, SentryApiClient
+
+BugsinkClient().resolve_issue("12345")
+SentryApiClient().resolve_issue("98765")
+```
+
+Credentials:
+
+- Bugsink: `BUGSINK_API_TOKEN` plus `SENTRY_DSN` or `BUGSINK_HOST`.
+- Sentry: `SENTRY_AUTH_TOKEN`; optionally `SENTRY_BASE_URL` for self-hosted Sentry-compatible APIs.
+
+These values are resolved through explicit env vars first, then Locke/Vaultwarden when `ojiichan[vault]` is installed.
+
+## Diagnostics DSL for agents
+
+Annotate code paths so coding agents know where to look for errors:
+
+```python
+from ojiichan import diagnostic, hint
+
+@diagnostic(hint(
+    operation="matrix_exchange",
+    topic="auth",
+    failure=True,
+    issue_backend="bugsink",
+    runbook="docs/runbooks/matrix-auth.md",
+))
+def exchange_matrix_token(...):
+    ...
+```
+
+Or use a nearby comment that agents can parse/read:
+
+```python
+# ojiichan: operation=matrix_exchange topic=auth failure=true issue_backend=bugsink tags=matrix,auth
+```
+
+Hints line up with ELK fields (`operation`, `topic`, `failure`) and issue tooling (`issue_backend`, `issue_query`, `runbook`) so an agent can jump from code to logs/issues quickly.
 
 ## MCP server
 
@@ -103,6 +149,9 @@ Exposed tools:
 - `emit_elk_event`
 - `bugsink_health`
 - `bugsink_issues`
+- `parse_diagnostic_annotation`
+- `bugsink_resolve_issue`
+- `sentry_resolve_issue`
 - `create_bead_from_issue`
 - `xcode_build`
 - `xcode_test`
@@ -129,5 +178,6 @@ git push origin main --tags
 
 - Bugsink ingestion uses the normal Sentry SDK via `SENTRY_DSN`.
 - Bugsink issue reads use the canonical read API at `/api/canonical/0/issues/` and require `BUGSINK_API_TOKEN`.
+- Issue resolution uses Bugsink's canonical/Sentry-compatible issue API and Sentry's `/api/0/issues/{issue_id}/` API.
 - Beads integration is intentionally optional; `ojiichan.beads` shells out only when `bead`/`beads` is installed.
 - The public distribution and import package are both `ojiichan`.

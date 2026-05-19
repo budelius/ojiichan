@@ -13,7 +13,9 @@
       "ojiichan/sentry-dsn": "Sentry/Bugsink ingest DSN",
       "ojiichan/bugsink-api-token": "Bugsink API token for issue reads",
       "ojiichan/bugsink-host": "Bugsink host when not derivable from DSN",
-      "ojiichan/bugsink-project-id": "Bugsink project id when not derivable from DSN"
+      "ojiichan/bugsink-project-id": "Bugsink project id when not derivable from DSN",
+      "ojiichan/sentry-auth-token": "Sentry API token for issue resolution",
+      "ojiichan/sentry-base-url": "Sentry-compatible API base URL; defaults to https://sentry.io"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",
@@ -22,7 +24,8 @@
       "ELASTICSEARCH_USE_SSL": "true/false; defaults to true",
       "ELASTICSEARCH_VERIFY_CERTS": "true/false; defaults to true",
       "ELASTICSEARCH_TIMEOUT": "Elasticsearch timeout seconds; defaults to 10",
-      "BUGSINK_TIMEOUT": "Bugsink API timeout seconds; defaults to 10"
+      "BUGSINK_TIMEOUT": "Bugsink API timeout seconds; defaults to 10",
+      "SENTRY_TIMEOUT": "Sentry API timeout seconds; defaults to 10"
     }
   }
 }

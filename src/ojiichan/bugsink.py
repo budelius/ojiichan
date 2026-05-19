@@ -45,6 +45,50 @@ class BugsinkClient:
         data = response.json()
         return data.get("results", []) if isinstance(data, dict) else []
 
+    def resolve_issue(self, issue_id: str | int) -> dict[str, Any]:
+        """Mark a Bugsink issue as resolved via its HTTP API.
+
+        Bugsink exposes a canonical API for reads and Sentry-compatible issue
+        semantics. We try the canonical issue endpoint first, then fall back to
+        the Sentry-compatible group endpoint used by Sentry/Bugsink-style APIs.
+        """
+        if not self.config.host:
+            raise RuntimeError("SENTRY_DSN or BUGSINK_HOST is required")
+        if not self.config.api_token:
+            raise RuntimeError("BUGSINK_API_TOKEN is required to resolve issues")
+
+        headers = {"Authorization": f"Bearer {self.config.api_token}"}
+        attempts = [
+            (
+                "canonical",
+                "patch",
+                f"https://{self.config.host}/api/canonical/0/issues/{issue_id}/",
+                {"is_resolved": True},
+            ),
+            (
+                "sentry-compatible",
+                "put",
+                f"https://{self.config.host}/api/0/issues/{issue_id}/",
+                {"status": "resolved"},
+            ),
+        ]
+        errors: list[str] = []
+        for backend, method, url, payload in attempts:
+            try:
+                response = httpx.request(
+                    method,
+                    url,
+                    json=payload,
+                    headers=headers,
+                    timeout=self.config.timeout,
+                )
+                response.raise_for_status()
+                data = response.json() if response.content else {}
+                return {"ok": True, "backend": backend, "issue_id": str(issue_id), "response": data}
+            except Exception as exc:
+                errors.append(f"{backend}: {exc}")
+        return {"ok": False, "issue_id": str(issue_id), "errors": errors}
+
     def recent_unresolved(self, *, hours: int = 24, top_n: int = 5) -> list[BugsinkIssue]:
         cutoff = datetime.now(UTC) - timedelta(hours=hours)
         out: list[BugsinkIssue] = []

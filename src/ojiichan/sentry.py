@@ -5,7 +5,9 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from .config import env
+import httpx
+
+from .config import SentryApiConfig, env
 
 
 def init_sentry(
@@ -43,6 +45,36 @@ def init_sentry(
         **kwargs,
     )
     return True
+
+
+class SentryApiClient:
+    """Small Sentry REST API client for issue operations."""
+
+    def __init__(self, config: SentryApiConfig | None = None) -> None:
+        self.config = config or SentryApiConfig.from_env()
+
+    def resolve_issue(self, issue_id: str | int) -> dict[str, Any]:
+        """Mark a Sentry issue/group as resolved.
+
+        ``issue_id`` is Sentry's group/issue id. Requires ``SENTRY_AUTH_TOKEN``
+        with issue write permissions.
+        """
+        if not self.config.auth_token:
+            raise RuntimeError("SENTRY_AUTH_TOKEN is required to resolve Sentry issues")
+        url = f"{self.config.base_url}/api/0/issues/{issue_id}/"
+        response = httpx.put(
+            url,
+            json={"status": "resolved"},
+            headers={"Authorization": f"Bearer {self.config.auth_token}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        return {
+            "ok": True,
+            "backend": "sentry",
+            "issue_id": str(issue_id),
+            "response": response.json() if response.content else {},
+        }
 
 
 def capture_exception(exc: BaseException, **context: Any) -> None:

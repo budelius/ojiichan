@@ -26,6 +26,8 @@ SECRET_MAP: dict[str, str] = {
     "BUGSINK_API_TOKEN": "bugsink-api-token",
     "BUGSINK_HOST": "bugsink-host",
     "BUGSINK_PROJECT_ID": "bugsink-project-id",
+    "SENTRY_AUTH_TOKEN": "sentry-auth-token",
+    "SENTRY_BASE_URL": "sentry-base-url",
 }
 
 _cache: dict[str, str | None] = {}

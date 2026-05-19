@@ -18,7 +18,9 @@ from mcp.server.fastmcp import FastMCP
 
 from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
+from ojiichan.dsl import parse_annotation
 from ojiichan.elk import ElkClient, check_elk
+from ojiichan.sentry import SentryApiClient
 
 mcp = FastMCP("ojiichan")
 
@@ -98,6 +100,24 @@ def bugsink_issues(hours: int = 24, top: int = 10) -> dict[str, Any]:
         top_n=_safe_limit(top, default=10, maximum=100),
     )
     return {"issues": [issue.__dict__ for issue in issues]}
+
+
+@mcp.tool()
+def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
+    """Parse an `ojiichan: key=value` code comment into diagnostic fields."""
+    return parse_annotation(text).to_event_data()
+
+
+@mcp.tool()
+def bugsink_resolve_issue(issue_id: str) -> dict[str, Any]:
+    """Resolve a Bugsink issue by id."""
+    return BugsinkClient().resolve_issue(issue_id)
+
+
+@mcp.tool()
+def sentry_resolve_issue(issue_id: str) -> dict[str, Any]:
+    """Resolve a Sentry issue/group by id."""
+    return SentryApiClient().resolve_issue(issue_id)
 
 
 @mcp.tool()
