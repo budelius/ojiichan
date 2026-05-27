@@ -17,7 +17,7 @@
       "ojiichan/sentry-auth-token": "Sentry API token for issue resolution",
       "ojiichan/sentry-base-url": "Sentry-compatible API base URL; defaults to https://sentry.io",
       "ojiichan/rustrak-api-token": "DUMMY-rustrak-token-set-real-value-later",
-      "ojiichan/rustrak-base-url": "Rustrak base URL; defaults to https://rustrak.pseekoo.io",
+      "ojiichan/rustrak-base-url": "Rustrak API base URL; defaults to https://ingest.rustrak.pseekoo.io (UI host is the same domain without the ingest. prefix)",
       "ojiichan/rustrak-project-id": "Default Rustrak project id used when callers omit one"
     },
     "env": {

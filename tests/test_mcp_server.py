@@ -42,6 +42,110 @@ def test_bugsink_resolve_issue_is_not_supported() -> None:
     assert "Rustrak" in result["message"]
 
 
+def test_rustrak_config_defaults_ingest_host_and_ui_url() -> None:
+    cfg = RustrakConfig(api_token="x", project_id="7")
+    assert cfg.base_url == "https://ingest.rustrak.pseekoo.io"
+    assert cfg.ui_url == "https://rustrak.pseekoo.io/projects/7"
+
+    cfg_custom = RustrakConfig(
+        api_token="x", base_url="https://ingest.rustrak.example", project_id="3"
+    )
+    assert cfg_custom.ui_url == "https://rustrak.example/projects/3"
+
+    cfg_no_project = RustrakConfig(api_token="x")
+    assert cfg_no_project.ui_url is None
+
+
+def test_rustrak_list_recent_issues(monkeypatch) -> None:
+    calls = []
+
+    class Response:
+        content = b'{"items":[]}'
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return {
+                "items": [
+                    {
+                        "id": "11111111-1111-1111-1111-111111111111",
+                        "project_id": 42,
+                        "short_id": "PROJ-1",
+                        "title": "RuntimeError",
+                        "value": "boom",
+                        "first_seen": "2026-05-26T10:00:00Z",
+                        "last_seen": "2026-05-27T10:00:00Z",
+                        "event_count": 5,
+                        "is_resolved": False,
+                        "is_muted": False,
+                    }
+                ],
+                "total_count": 1,
+                "page": 1,
+                "per_page": 100,
+                "total_pages": 1,
+            }
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response()
+
+    monkeypatch.setattr("ojiichan.rustrak.httpx.get", fake_get)
+    client = RustrakClient(
+        RustrakConfig(
+            api_token="token",
+            base_url="https://ingest.rustrak.example",
+            project_id="42",
+        )
+    )
+
+    issues = client.recent_unresolved(hours=24 * 365)
+
+    assert calls[0][0] == "https://ingest.rustrak.example/api/projects/42/issues"
+    assert calls[0][1]["headers"] == {"Authorization": "Bearer token"}
+    assert calls[0][1]["params"]["filter"] == "open"
+    assert calls[0][1]["params"]["sort"] == "last_seen"
+    assert calls[0][1]["params"]["order"] == "desc"
+    assert len(issues) == 1
+    only = issues[0]
+    assert only.events == 5
+    assert only.message == "boom"
+    assert only.url.startswith("https://rustrak.example/projects/42/issues/")
+
+
+def test_health_routes_to_rustrak_when_backend_selected(monkeypatch) -> None:
+    from ojiichan import cli as cli_mod
+
+    monkeypatch.setenv("OJIICHAN_ISSUE_BACKEND", "rustrak")
+    monkeypatch.setenv("RUSTRAK_API_TOKEN", "x")
+    monkeypatch.setenv("RUSTRAK_PROJECT_ID", "42")
+    captured: dict[str, bool] = {"rustrak": False, "bugsink": False}
+
+    def fake_check_rustrak(**kwargs):
+        captured["rustrak"] = True
+        return {"status": "ok", "window_hours": kwargs.get("hours"), "backend": "rustrak"}
+
+    def fake_check_bugsink(**kwargs):
+        captured["bugsink"] = True
+        return {"status": "ok", "window_hours": kwargs.get("hours")}
+
+    def fake_check_elk(**kwargs):
+        return {"status": "ok"}
+
+    monkeypatch.setattr(cli_mod, "check_rustrak", fake_check_rustrak)
+    monkeypatch.setattr(cli_mod, "check_bugsink", fake_check_bugsink)
+    monkeypatch.setattr(cli_mod, "check_elk", fake_check_elk)
+
+    parser = cli_mod.build_parser()
+    args = parser.parse_args(["health", "--json"])
+    rc = cli_mod.cmd_health(args)
+
+    assert rc == 0
+    assert captured["rustrak"] is True
+    assert captured["bugsink"] is False
+
+
 def test_rustrak_resolve_issue(monkeypatch) -> None:
     calls = []
 
@@ -116,6 +220,8 @@ def test_mcp_server_exposes_expected_tools() -> None:
         "bugsink_resolve_issue",
         "sentry_resolve_issue",
         "rustrak_resolve_issue",
+        "rustrak_health",
+        "rustrak_issues",
         "create_bead_from_issue",
         "xcode_build",
         "xcode_test",

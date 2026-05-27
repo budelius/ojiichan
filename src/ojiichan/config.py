@@ -102,12 +102,20 @@ class SentryApiConfig:
         )
 
 
+_RUSTRAK_API_DEFAULT = "https://ingest.rustrak.pseekoo.io"
+
+
 @dataclass(frozen=True)
 class RustrakConfig:
-    """Configuration for Rustrak (a Sentry-compatible error tracker)."""
+    """Configuration for Rustrak (a Sentry-compatible error tracker).
+
+    ``base_url`` is the **API** host (``ingest.rustrak.pseekoo.io``); the
+    dashboard/UI host is served from the same domain minus the ``ingest.``
+    prefix and is exposed via :pyattr:`ui_url` for triage links.
+    """
 
     api_token: str | None
-    base_url: str = "https://rustrak.pseekoo.io"
+    base_url: str = _RUSTRAK_API_DEFAULT
     project_id: str | None = None
     timeout: float = 10
 
@@ -115,13 +123,29 @@ class RustrakConfig:
     def from_env(cls) -> RustrakConfig:
         return cls(
             api_token=env("RUSTRAK_API_TOKEN"),
-            base_url=(
-                env("RUSTRAK_BASE_URL", "https://rustrak.pseekoo.io")
-                or "https://rustrak.pseekoo.io"
-            ).rstrip("/"),
+            base_url=(env("RUSTRAK_BASE_URL", _RUSTRAK_API_DEFAULT) or _RUSTRAK_API_DEFAULT).rstrip(
+                "/"
+            ),
             project_id=env("RUSTRAK_PROJECT_ID"),
             timeout=float(env("RUSTRAK_TIMEOUT", "10") or "10"),
         )
+
+    @property
+    def ui_url(self) -> str | None:
+        """Return the dashboard URL for the configured project, if any.
+
+        Strips a leading ``ingest.`` from the hostname so triage links point at
+        the Next.js dashboard rather than the API host.
+        """
+        if not self.project_id:
+            return None
+        parsed = urlparse(self.base_url)
+        host = parsed.hostname or ""
+        if host.startswith("ingest."):
+            host = host[len("ingest.") :]
+        netloc = f"{host}:{parsed.port}" if parsed.port else host
+        scheme = parsed.scheme or "https"
+        return f"{scheme}://{netloc}/projects/{self.project_id}"
 
 
 ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink")

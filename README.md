@@ -90,9 +90,10 @@ choice; with no preference it prefers Rustrak then falls back to Sentry.
 
 Credentials:
 
-- Rustrak: `RUSTRAK_API_TOKEN`; optionally `RUSTRAK_BASE_URL` (defaults to
-  `https://rustrak.pseekoo.io`) and `RUSTRAK_PROJECT_ID` for the default
-  project scope.
+- Rustrak: `RUSTRAK_API_TOKEN`; optionally `RUSTRAK_BASE_URL` (the **API**
+  host, defaults to `https://ingest.rustrak.pseekoo.io`; the dashboard host is
+  the same domain without the `ingest.` prefix and is auto-derived for triage
+  links) and `RUSTRAK_PROJECT_ID` for the default project scope.
 - Sentry: `SENTRY_AUTH_TOKEN`; optionally `SENTRY_BASE_URL` for self-hosted
   Sentry-compatible APIs.
 - Bugsink (ingestion/reads only): `BUGSINK_API_TOKEN` plus `SENTRY_DSN` or
@@ -165,6 +166,8 @@ Exposed tools:
 - `bugsink_resolve_issue` (returns "not supported" message)
 - `sentry_resolve_issue`
 - `rustrak_resolve_issue`
+- `rustrak_health`
+- `rustrak_issues`
 - `create_bead_from_issue`
 - `xcode_build`
 - `xcode_test`

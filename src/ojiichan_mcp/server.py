@@ -20,7 +20,7 @@ from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
 from ojiichan.dsl import parse_annotation
 from ojiichan.elk import ElkClient, check_elk
-from ojiichan.rustrak import RustrakClient
+from ojiichan.rustrak import RustrakClient, check_rustrak
 from ojiichan.sentry import SentryApiClient
 
 mcp = FastMCP("ojiichan")
@@ -122,6 +122,25 @@ def bugsink_resolve_issue(issue_id: str) -> dict[str, Any]:
 def sentry_resolve_issue(issue_id: str) -> dict[str, Any]:
     """Resolve a Sentry issue/group by id."""
     return SentryApiClient().resolve_issue(issue_id)
+
+
+@mcp.tool()
+def rustrak_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
+    """Check Rustrak configuration and unresolved recent issue activity."""
+    return check_rustrak(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+
+
+@mcp.tool()
+def rustrak_issues(
+    hours: int = 24, top: int = 10, project_id: str | None = None
+) -> dict[str, Any]:
+    """List recent unresolved Rustrak issues."""
+    issues = RustrakClient().recent_unresolved(
+        hours=_safe_limit(hours, default=24, maximum=24 * 30),
+        top_n=_safe_limit(top, default=10, maximum=100),
+        project_id=project_id,
+    )
+    return {"issues": [issue.__dict__ for issue in issues]}
 
 
 @mcp.tool()

@@ -10,9 +10,9 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
-from .config import default_issue_backend
+from .config import RustrakConfig, default_issue_backend
 from .elk import ElkClient, check_elk
-from .rustrak import RustrakClient
+from .rustrak import RustrakClient, check_rustrak
 from .sentry import SentryApiClient
 
 
@@ -24,14 +24,33 @@ def _print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, default=str))
 
 
+def _select_issue_health_backend() -> str:
+    """Pick the issue-tracker backend for the health command.
+
+    Honors ``OJIICHAN_ISSUE_BACKEND`` (``rustrak`` / ``sentry`` / ``bugsink``).
+    Without a declared backend, prefers Rustrak when ``RUSTRAK_API_TOKEN`` is
+    configured, else falls back to Bugsink.
+    """
+    backend = default_issue_backend()
+    if backend != "auto":
+        return backend
+    return "rustrak" if RustrakConfig.from_env().api_token else "bugsink"
+
+
 def cmd_health(args: argparse.Namespace) -> int:
     elk = check_elk(hours=args.hours, top_n=args.top)
-    bugsink = check_bugsink(hours=args.hours, top_n=args.top)
-    payload = {"elk": elk, "bugsink": bugsink}
+    backend = _select_issue_health_backend()
+    if backend == "rustrak":
+        issue_health = check_rustrak(hours=args.hours, top_n=args.top)
+        issue_label = "Rustrak"
+    else:
+        issue_health = check_bugsink(hours=args.hours, top_n=args.top)
+        issue_label = "Bugsink/Sentry"
+    payload = {"elk": elk, "issues": issue_health, "issue_backend": backend}
     if args.json:
         _print_json(payload)
     else:
-        print(f"Ojiichan health window={args.hours}h\n")
+        print(f"Ojiichan health window={args.hours}h backend={backend}\n")
         print(f"{_status_glyph(elk['status'])} ELK")
         if "events_total" in elk:
             print(f"  events={elk['events_total']} failures={elk.get('events_failures', 0)}")
@@ -42,21 +61,21 @@ def cmd_health(args: argparse.Namespace) -> int:
         if elk.get("error"):
             print(f"  {elk['error']}")
 
-        print(f"\n{_status_glyph(bugsink['status'])} Bugsink/Sentry")
-        if bugsink.get("ui_url"):
-            print(f"  triage: {bugsink['ui_url']}")
-        if "total_issues" in bugsink:
+        print(f"\n{_status_glyph(issue_health['status'])} {issue_label}")
+        if issue_health.get("ui_url"):
+            print(f"  triage: {issue_health['ui_url']}")
+        if "total_issues" in issue_health:
             print(
-                f"  issues total={bugsink['total_issues']} "
-                f"unresolved={bugsink['unresolved']} "
-                f"recent={len(bugsink.get('recent_unresolved') or [])}"
+                f"  issues total={issue_health['total_issues']} "
+                f"unresolved={issue_health['unresolved']} "
+                f"recent={len(issue_health.get('recent_unresolved') or [])}"
             )
-            for issue in bugsink.get("recent_unresolved") or []:
+            for issue in issue_health.get("recent_unresolved") or []:
                 print(f"    └─ [{issue['events']}x] {issue['type']}: {issue['message']}")
-        if bugsink.get("message"):
-            print(f"  {bugsink['message']}")
+        if issue_health.get("message"):
+            print(f"  {issue_health['message']}")
 
-    return 1 if "fail" in {elk["status"], bugsink["status"]} else 0
+    return 1 if "fail" in {elk["status"], issue_health["status"]} else 0
 
 
 def cmd_logs(args: argparse.Namespace) -> int:
