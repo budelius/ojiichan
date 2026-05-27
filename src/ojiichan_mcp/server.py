@@ -20,6 +20,7 @@ from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
 from ojiichan.dsl import parse_annotation
 from ojiichan.elk import ElkClient, check_elk
+from ojiichan.rustrak import RustrakClient
 from ojiichan.sentry import SentryApiClient
 
 mcp = FastMCP("ojiichan")
@@ -110,7 +111,10 @@ def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
 
 @mcp.tool()
 def bugsink_resolve_issue(issue_id: str) -> dict[str, Any]:
-    """Resolve a Bugsink issue by id."""
+    """Bugsink issue resolution is not supported by ojiichan.
+
+    Returns a structured message pointing users at Rustrak or Sentry.
+    """
     return BugsinkClient().resolve_issue(issue_id)
 
 
@@ -118,6 +122,16 @@ def bugsink_resolve_issue(issue_id: str) -> dict[str, Any]:
 def sentry_resolve_issue(issue_id: str) -> dict[str, Any]:
     """Resolve a Sentry issue/group by id."""
     return SentryApiClient().resolve_issue(issue_id)
+
+
+@mcp.tool()
+def rustrak_resolve_issue(issue_id: str, project_id: str | None = None) -> dict[str, Any]:
+    """Resolve a Rustrak issue by id.
+
+    Rustrak is a Sentry-compatible error tracker; resolution scopes by project.
+    ``project_id`` falls back to ``RUSTRAK_PROJECT_ID`` when not given.
+    """
+    return RustrakClient().resolve_issue(issue_id, project_id=project_id)
 
 
 @mcp.tool()

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from ojiichan import ElkClient, diagnostic, get_diagnostic, parse_annotation
 from ojiichan.bugsink import BugsinkClient
-from ojiichan.config import BugsinkConfig, SentryApiConfig
+from ojiichan.config import BugsinkConfig, RustrakConfig, SentryApiConfig
+from ojiichan.rustrak import RustrakClient
 from ojiichan.sentry import SentryApiClient
 from ojiichan_mcp.server import mcp
 
@@ -23,23 +24,7 @@ def test_diagnostic_dsl() -> None:
     assert diag.to_event_data()["failure"] is True
 
 
-def test_bugsink_resolve_issue(monkeypatch) -> None:
-    calls = []
-
-    class Response:
-        content = b"{}"
-
-        def raise_for_status(self) -> None:
-            return None
-
-        def json(self) -> dict[str, str]:
-            return {"id": "123"}
-
-    def fake_request(method, url, **kwargs):
-        calls.append((method, url, kwargs))
-        return Response()
-
-    monkeypatch.setattr("ojiichan.bugsink.httpx.request", fake_request)
+def test_bugsink_resolve_issue_is_not_supported() -> None:
     client = BugsinkClient(
         BugsinkConfig(
             dsn=None,
@@ -51,9 +36,45 @@ def test_bugsink_resolve_issue(monkeypatch) -> None:
 
     result = client.resolve_issue("123")
 
+    assert result["ok"] is False
+    assert result["supported"] is False
+    assert result["backend"] == "bugsink"
+    assert "Rustrak" in result["message"]
+
+
+def test_rustrak_resolve_issue(monkeypatch) -> None:
+    calls = []
+
+    class Response:
+        content = b"{}"
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, str]:
+            return {"id": "abc"}
+
+    def fake_patch(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response()
+
+    monkeypatch.setattr("ojiichan.rustrak.httpx.patch", fake_patch)
+    client = RustrakClient(
+        RustrakConfig(
+            api_token="token",
+            base_url="https://rustrak.example",
+            project_id="42",
+        )
+    )
+
+    result = client.resolve_issue("abc")
+
     assert result["ok"] is True
-    assert calls[0][0] == "patch"
-    assert calls[0][2]["json"] == {"is_resolved": True}
+    assert result["backend"] == "rustrak"
+    assert result["project_id"] == "42"
+    assert calls[0][0] == "https://rustrak.example/api/projects/42/issues/abc"
+    assert calls[0][1]["json"] == {"is_resolved": True}
+    assert calls[0][1]["headers"] == {"Authorization": "Bearer token"}
 
 
 def test_sentry_resolve_issue(monkeypatch) -> None:
@@ -94,6 +115,7 @@ def test_mcp_server_exposes_expected_tools() -> None:
         "parse_diagnostic_annotation",
         "bugsink_resolve_issue",
         "sentry_resolve_issue",
+        "rustrak_resolve_issue",
         "create_bead_from_issue",
         "xcode_build",
         "xcode_test",

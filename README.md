@@ -1,6 +1,6 @@
 # ojiichan
 
-Pseekoo diagnostics toolkit for projects that report to **ELK** and **Bugsink/Sentry**.
+Pseekoo diagnostics toolkit for projects that report to **ELK** and **Bugsink/Sentry/Rustrak**.
 
 It provides both:
 
@@ -35,7 +35,7 @@ ojiichan health --hours 6
 ojiichan logs --hours 2 --topic matrix --failures-only
 ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
-ojiichan resolve-issue 12345 --backend bugsink
+ojiichan resolve-issue 7b3a... --backend rustrak --project-id 42
 ojiichan resolve-issue 98765 --backend sentry
 ```
 
@@ -72,19 +72,31 @@ except Exception as exc:
 
 ## Issue resolution
 
-Ojiichan can resolve issues through Bugsink or Sentry APIs:
+Ojiichan resolves issues through **Rustrak** or **Sentry**. Bugsink is supported
+for *ingestion and issue reads* but does not support resolution from ojiichan;
+calling `resolve_issue` on Bugsink returns a friendly "not supported" message
+that points users at Rustrak/Sentry instead.
 
 ```python
-from ojiichan import BugsinkClient, SentryApiClient
+from ojiichan import RustrakClient, SentryApiClient
 
-BugsinkClient().resolve_issue("12345")
+RustrakClient().resolve_issue("7b3a-…-uuid", project_id=42)
 SentryApiClient().resolve_issue("98765")
 ```
 
+Projects pick their default backend by exporting `OJIICHAN_ISSUE_BACKEND`
+(`rustrak`, `sentry`, or `bugsink`). The CLI/`--backend auto` honors that
+choice; with no preference it prefers Rustrak then falls back to Sentry.
+
 Credentials:
 
-- Bugsink: `BUGSINK_API_TOKEN` plus `SENTRY_DSN` or `BUGSINK_HOST`.
-- Sentry: `SENTRY_AUTH_TOKEN`; optionally `SENTRY_BASE_URL` for self-hosted Sentry-compatible APIs.
+- Rustrak: `RUSTRAK_API_TOKEN`; optionally `RUSTRAK_BASE_URL` (defaults to
+  `https://rustrak.pseekoo.io`) and `RUSTRAK_PROJECT_ID` for the default
+  project scope.
+- Sentry: `SENTRY_AUTH_TOKEN`; optionally `SENTRY_BASE_URL` for self-hosted
+  Sentry-compatible APIs.
+- Bugsink (ingestion/reads only): `BUGSINK_API_TOKEN` plus `SENTRY_DSN` or
+  `BUGSINK_HOST`.
 
 These values are resolved through explicit env vars first, then Locke/Vaultwarden when `ojiichan[vault]` is installed.
 
@@ -150,8 +162,9 @@ Exposed tools:
 - `bugsink_health`
 - `bugsink_issues`
 - `parse_diagnostic_annotation`
-- `bugsink_resolve_issue`
+- `bugsink_resolve_issue` (returns "not supported" message)
 - `sentry_resolve_issue`
+- `rustrak_resolve_issue`
 - `create_bead_from_issue`
 - `xcode_build`
 - `xcode_test`
@@ -178,6 +191,6 @@ git push origin main --tags
 
 - Bugsink ingestion uses the normal Sentry SDK via `SENTRY_DSN`.
 - Bugsink issue reads use the canonical read API at `/api/canonical/0/issues/` and require `BUGSINK_API_TOKEN`.
-- Issue resolution uses Bugsink's canonical/Sentry-compatible issue API and Sentry's `/api/0/issues/{issue_id}/` API.
+- Issue resolution uses Sentry's `/api/0/issues/{issue_id}/` PUT API and Rustrak's `/api/projects/{project_id}/issues/{issue_id}` PATCH API. Bugsink resolution is intentionally disabled.
 - Beads integration is intentionally optional; `ojiichan.beads` shells out only when `bead`/`beads` is installed.
 - The public distribution and import package are both `ojiichan`.

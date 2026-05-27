@@ -15,17 +15,22 @@
       "ojiichan/bugsink-host": "Bugsink host when not derivable from DSN",
       "ojiichan/bugsink-project-id": "Bugsink project id when not derivable from DSN",
       "ojiichan/sentry-auth-token": "Sentry API token for issue resolution",
-      "ojiichan/sentry-base-url": "Sentry-compatible API base URL; defaults to https://sentry.io"
+      "ojiichan/sentry-base-url": "Sentry-compatible API base URL; defaults to https://sentry.io",
+      "ojiichan/rustrak-api-token": "DUMMY-rustrak-token-set-real-value-later",
+      "ojiichan/rustrak-base-url": "Rustrak base URL; defaults to https://rustrak.pseekoo.io",
+      "ojiichan/rustrak-project-id": "Default Rustrak project id used when callers omit one"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",
       "OJIICHAN_VAULT_FOLDER": "Optional Vaultwarden folder prefix; defaults to ojiichan",
+      "OJIICHAN_ISSUE_BACKEND": "Project-declared issue backend: rustrak | sentry | bugsink. Bugsink resolve is not supported.",
       "ELASTICSEARCH_PORT": "Elasticsearch port; defaults to 443",
       "ELASTICSEARCH_USE_SSL": "true/false; defaults to true",
       "ELASTICSEARCH_VERIFY_CERTS": "true/false; defaults to true",
       "ELASTICSEARCH_TIMEOUT": "Elasticsearch timeout seconds; defaults to 10",
       "BUGSINK_TIMEOUT": "Bugsink API timeout seconds; defaults to 10",
-      "SENTRY_TIMEOUT": "Sentry API timeout seconds; defaults to 10"
+      "SENTRY_TIMEOUT": "Sentry API timeout seconds; defaults to 10",
+      "RUSTRAK_TIMEOUT": "Rustrak API timeout seconds; defaults to 10"
     }
   }
 }

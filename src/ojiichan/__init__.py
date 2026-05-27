@@ -3,6 +3,7 @@
 from .bugsink import BugsinkClient, BugsinkIssue, check_bugsink
 from .dsl import DiagnosticHint, diagnostic, get_diagnostic, hint, parse_annotation
 from .elk import ElkClient, check_elk, query_elk_logs
+from .rustrak import RustrakClient
 from .sentry import SentryApiClient, capture_exception, init_sentry
 
 __all__ = [
@@ -10,6 +11,7 @@ __all__ = [
     "BugsinkIssue",
     "DiagnosticHint",
     "ElkClient",
+    "RustrakClient",
     "SentryApiClient",
     "capture_exception",
     "check_bugsink",

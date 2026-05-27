@@ -10,7 +10,9 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
+from .config import default_issue_backend
 from .elk import ElkClient, check_elk
+from .rustrak import RustrakClient
 from .sentry import SentryApiClient
 
 
@@ -78,25 +80,30 @@ def cmd_logs(args: argparse.Namespace) -> int:
 
 
 def cmd_resolve_issue(args: argparse.Namespace) -> int:
-    if args.backend == "bugsink":
-        payload = BugsinkClient().resolve_issue(args.issue_id)
-    elif args.backend == "sentry":
+    backend = args.backend if args.backend != "auto" else default_issue_backend()
+
+    if backend == "rustrak":
+        payload = RustrakClient().resolve_issue(args.issue_id, project_id=args.project_id)
+    elif backend == "sentry":
         payload = SentryApiClient().resolve_issue(args.issue_id)
+    elif backend == "bugsink":
+        payload = BugsinkClient().resolve_issue(args.issue_id)
     else:
+        # No project-level default: prefer Rustrak, then Sentry.
         try:
-            payload = BugsinkClient().resolve_issue(args.issue_id)
-            if not payload.get("ok"):
-                payload = SentryApiClient().resolve_issue(args.issue_id)
-        except Exception:
+            payload = RustrakClient().resolve_issue(args.issue_id, project_id=args.project_id)
+        except Exception as exc:
             payload = SentryApiClient().resolve_issue(args.issue_id)
+            payload.setdefault("notes", []).append(f"rustrak unavailable: {exc}")
 
     if args.json:
         _print_json(payload)
     else:
         print("resolved" if payload.get("ok") else "not resolved")
-        if not payload.get("ok"):
-            for error in payload.get("errors") or []:
-                print(f"  {error}")
+        if payload.get("message"):
+            print(f"  {payload['message']}")
+        for error in payload.get("errors") or []:
+            print(f"  {error}")
     return 0 if payload.get("ok") else 1
 
 
@@ -144,9 +151,22 @@ def build_parser() -> argparse.ArgumentParser:
     emit.add_argument("--failure", action="store_true")
     emit.set_defaults(func=cmd_emit)
 
-    resolve = sub.add_parser("resolve-issue", help="Resolve a Bugsink/Sentry issue by id")
+    resolve = sub.add_parser("resolve-issue", help="Resolve a Rustrak/Sentry issue by id")
     resolve.add_argument("issue_id")
-    resolve.add_argument("--backend", choices=["auto", "bugsink", "sentry"], default="auto")
+    resolve.add_argument(
+        "--backend",
+        choices=["auto", "rustrak", "sentry", "bugsink"],
+        default="auto",
+        help=(
+            "Issue backend. 'auto' uses OJIICHAN_ISSUE_BACKEND if set, else tries "
+            "Rustrak then Sentry. 'bugsink' is intentionally not supported and "
+            "returns a friendly message."
+        ),
+    )
+    resolve.add_argument(
+        "--project-id",
+        help="Rustrak project id (defaults to RUSTRAK_PROJECT_ID)",
+    )
     resolve.add_argument("--json", action="store_true")
     resolve.set_defaults(func=cmd_resolve_issue)
 

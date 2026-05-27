@@ -1,7 +1,7 @@
 [project]
 name = "ojiichan"
-version = "0.1.1"
-description = "Pseekoo diagnostics toolkit for ELK, Bugsink/Sentry, and issue handoff workflows."
+version = "0.2.0"
+description = "Pseekoo diagnostics toolkit for ELK, Rustrak/Sentry/Bugsink, and issue handoff workflows."
 readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Martin Wieser", email = "martin.wieser@pseekoo.com" }]

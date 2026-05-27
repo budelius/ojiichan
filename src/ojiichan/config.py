@@ -102,6 +102,42 @@ class SentryApiConfig:
         )
 
 
+@dataclass(frozen=True)
+class RustrakConfig:
+    """Configuration for Rustrak (a Sentry-compatible error tracker)."""
+
+    api_token: str | None
+    base_url: str = "https://rustrak.pseekoo.io"
+    project_id: str | None = None
+    timeout: float = 10
+
+    @classmethod
+    def from_env(cls) -> RustrakConfig:
+        return cls(
+            api_token=env("RUSTRAK_API_TOKEN"),
+            base_url=(
+                env("RUSTRAK_BASE_URL", "https://rustrak.pseekoo.io")
+                or "https://rustrak.pseekoo.io"
+            ).rstrip("/"),
+            project_id=env("RUSTRAK_PROJECT_ID"),
+            timeout=float(env("RUSTRAK_TIMEOUT", "10") or "10"),
+        )
+
+
+ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink")
+
+
+def default_issue_backend() -> str:
+    """Return the project-declared issue backend, defaulting to ``auto``.
+
+    Projects pick a backend by exporting ``OJIICHAN_ISSUE_BACKEND=rustrak`` (or
+    ``sentry`` / ``bugsink``). Unknown values fall back to ``auto`` so callers
+    can still try multiple backends.
+    """
+    value = (env("ISSUE_BACKEND") or "").strip().lower()
+    return value if value in ISSUE_BACKENDS else "auto"
+
+
 def parse_sentry_dsn(dsn: str) -> tuple[str | None, str | None]:
     """Extract Bugsink/Sentry host and project id from a DSN."""
     try:
