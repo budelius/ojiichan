@@ -17,11 +17,18 @@ DEFAULT_VAULT_FOLDER = "ojiichan"
 
 # Env var name -> vault secret name. The full vault path is
 # ``{OJIICHAN_VAULT_FOLDER or ojiichan}/{secret_name}``.
+#
+# ELK and Rustrak credentials live under shared ``elk/`` and ``rustrak/``
+# sub-namespaces (e.g. ``ojiichan/elk/password``, ``ojiichan/rustrak/api-token``)
+# so they are reused across all ojiichan-monitored projects rather than
+# duplicated per project. Override the folder with OJIICHAN_VAULT_FOLDER only
+# when a project genuinely needs its own credentials.
 SECRET_MAP: dict[str, str] = {
-    "ELASTICSEARCH_HOST": "elasticsearch-host",
-    "ELASTICSEARCH_USERNAME": "elasticsearch-username",
-    "ELASTICSEARCH_PASSWORD": "elasticsearch-password",
-    "ELASTICSEARCH_INDEX_PREFIX": "elasticsearch-index-prefix",
+    "ELASTICSEARCH_HOST": "elk/host",
+    "ELASTICSEARCH_USERNAME": "elk/username",
+    "ELASTICSEARCH_PASSWORD": "elk/password",
+    "ELASTICSEARCH_INDEX_PREFIX": "elk/index-prefix",
+    "RUSTRAK_API_TOKEN": "rustrak/api-token",
     "SENTRY_DSN": "sentry-dsn",
     "BUGSINK_API_TOKEN": "bugsink-api-token",
     "BUGSINK_HOST": "bugsink-host",
