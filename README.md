@@ -1,13 +1,15 @@
 # ojiichan
 
-Pseekoo diagnostics toolkit for projects that report to **ELK** and **Bugsink/Sentry/Rustrak**.
+Pseekoo diagnostics toolkit for projects that report to **ELK**, **Bugsink/Sentry/Rustrak**, and **Scaleway Cockpit**.
 
 It provides both:
 
 - a Python library (`ojiichan`) for structured ELK events and Sentry/Bugsink setup;
 - a CLI (`ojiichan`) for health checks, recent logs, and test event emission.
 
-It standardizes the same observability workflow across Python services.
+It standardizes the same observability workflow across Python services — and reads
+platform runtime logs (Scaleway Serverless Functions stdout/stderr) alongside
+application events, so one tool covers app-level *and* infra-level diagnostics.
 
 ## Install
 
@@ -37,6 +39,25 @@ ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
 ojiichan resolve-issue 7b3a... --backend rustrak --project-id 42
 ojiichan resolve-issue 98765 --backend sentry
+
+# Scaleway Cockpit (Loki) runtime logs — e.g. a Serverless Function's stdout/stderr
+ojiichan logs --backend scaleway --hours 2 --failures-only
+ojiichan logs --backend scaleway --source m3rp-api-staging-api --topic "Login failed"
+```
+
+### Scaleway Cockpit logs
+
+`--backend scaleway` reads logs from a project's Scaleway Cockpit via the Loki
+HTTP API. `--source` maps to the Loki `resource_name` label (a function name);
+`--topic` is a substring line filter; `--failures-only` keeps error/exception/5xx
+lines. When configured, `ojiichan health` also reports a Scaleway section.
+
+One-time setup (store the two secrets in the vault under `ojiichan/scaleway/…`,
+or export `OJIICHAN_SCALEWAY_LOKI_URL` / `OJIICHAN_SCALEWAY_COCKPIT_TOKEN`):
+
+```bash
+scw cockpit data-source list region=fr-par          # copy the type=logs "url"
+scw cockpit token create name=ojiichan region=fr-par token-scopes.query_logs=true
 ```
 
 ## Library
