@@ -396,7 +396,7 @@ wheels = [
 
 [[package]]
 name = "locke"
-version = "0.5.2"
+version = "0.6.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "click" },
@@ -407,9 +407,9 @@ dependencies = [
     { name = "winrt-windows-foundation", marker = "sys_platform == 'win32'" },
     { name = "winrt-windows-security-credentials-ui", marker = "sys_platform == 'win32'" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d9/75/fa8eec93a92f0ba7d05e5ab4cf552776051c87189f1545bf7977e3a5bc8a/locke-0.5.2.tar.gz", hash = "sha256:0ca915e11f2402130b82dec5d548f5f002e5be11e50ce9f6b5eb148f6b361d98", size = 81959, upload-time = "2026-05-14T12:32:11.806Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/28/6d/c1df3aa244e510b0ee3f46584ee3d8b50835820cc404a7da22d97606ddd8/locke-0.6.1.tar.gz", hash = "sha256:53e82b235376de35ac7689d8b8212bdaf11bbd9eb82c3ab02a4ad13c8f481693", size = 88327, upload-time = "2026-05-27T21:41:48.587Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/d4/3c6c2a030dc68fbeb13a41c2aac542797bb7e0790a9734b0e3acaa56a5e1/locke-0.5.2-py3-none-any.whl", hash = "sha256:198042713553c69aa036f56e2008bd83ab6d397fbdcd9235e94b4a1112c51adb", size = 50564, upload-time = "2026-05-14T12:32:10.417Z" },
+    { url = "https://files.pythonhosted.org/packages/f1/84/33456ab2388c1fa77b2c6ead4e6ae896901e1fae7a2f07dab22cab5207e0/locke-0.6.1-py3-none-any.whl", hash = "sha256:0c0a65071ee744990c4698f60f8d157d3c61d7ae3db82ca6b849f24e777cc0a7", size = 55978, upload-time = "2026-05-27T21:41:47.213Z" },
 ]
 
 [[package]]
