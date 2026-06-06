@@ -3,17 +3,37 @@
 Environment variables are still the explicit override, but secret values can be
 resolved from Vaultwarden via Locke when the optional ``vault`` extra is
 installed.
+
+To minimise pressure on Vaultwarden's per-IP rate limits on
+``/identity/connect/token`` and ``/api/sync``, this module:
+
+* reuses a single ``VaultClient`` per process,
+* warms every known secret in one ``list_secrets()`` call instead of N
+  per-secret round trips, and
+* persists the warmed snapshot to a 0600 file in the user cache dir so that
+  short-lived MCP server processes can reuse it within the TTL window.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
+import stat
+import tempfile
+import time
+from pathlib import Path
+from threading import Lock
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 VAULT_FOLDER_ENV = "OJIICHAN_VAULT_FOLDER"
 DEFAULT_VAULT_FOLDER = "ojiichan"
+VAULT_CACHE_TTL_ENV = "OJIICHAN_VAULT_CACHE_TTL"
+DEFAULT_VAULT_CACHE_TTL = 300  # seconds
+VAULT_CACHE_DISABLE_ENV = "OJIICHAN_VAULT_CACHE_DISABLE"
+VAULT_CACHE_PATH_ENV = "OJIICHAN_VAULT_CACHE_PATH"
 
 # Env var name -> vault secret name. The full vault path is
 # ``{OJIICHAN_VAULT_FOLDER or ojiichan}/{secret_name}``.
@@ -37,7 +57,10 @@ SECRET_MAP: dict[str, str] = {
     "SENTRY_BASE_URL": "sentry-base-url",
 }
 
-_cache: dict[str, str | None] = {}
+_lock = Lock()
+_memcache: dict[str, str | None] = {}
+_client: Any | None = None
+_warmed = False
 
 
 def vault_folder() -> str:
@@ -45,38 +68,175 @@ def vault_folder() -> str:
     return os.getenv(VAULT_FOLDER_ENV, DEFAULT_VAULT_FOLDER).strip("/")
 
 
-def _fetch_from_locke(env_var: str) -> str | None:
-    secret_name = SECRET_MAP.get(env_var)
-    if not secret_name:
-        return None
+def _disk_cache_enabled() -> bool:
+    return not os.getenv(VAULT_CACHE_DISABLE_ENV)
 
-    path = f"{vault_folder()}/{secret_name}"
+
+def _disk_cache_ttl() -> int:
+    raw = os.getenv(VAULT_CACHE_TTL_ENV)
+    if raw is None:
+        return DEFAULT_VAULT_CACHE_TTL
     try:
-        from locke.vault import get_vault_secret
+        ttl = int(raw)
+    except ValueError:
+        logger.debug("invalid %s=%r, falling back to default", VAULT_CACHE_TTL_ENV, raw)
+        return DEFAULT_VAULT_CACHE_TTL
+    return max(0, ttl)
+
+
+def _disk_cache_path() -> Path:
+    override = os.getenv(VAULT_CACHE_PATH_ENV)
+    if override:
+        return Path(override)
+    base = os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
+    return Path(base) / "ojiichan" / f"vault-{vault_folder()}.json"
+
+
+def _load_disk_cache() -> dict[str, str] | None:
+    if not _disk_cache_enabled():
+        return None
+    ttl = _disk_cache_ttl()
+    if ttl == 0:
+        return None
+    path = _disk_cache_path()
+    try:
+        raw = path.read_text()
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        logger.debug("failed to read vault cache at %s: %s", path, exc)
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        logger.debug("vault cache at %s is malformed: %s", path, exc)
+        return None
+    if not isinstance(data, dict):
+        return None
+    timestamp = data.get("timestamp")
+    secrets = data.get("secrets")
+    folder = data.get("folder")
+    if not isinstance(timestamp, (int, float)) or not isinstance(secrets, dict):
+        return None
+    if folder != vault_folder():
+        return None
+    if time.time() - timestamp > ttl:
+        return None
+    return {k: v for k, v in secrets.items() if isinstance(k, str) and isinstance(v, str)}
+
+
+def _save_disk_cache(secrets: dict[str, str]) -> None:
+    if not _disk_cache_enabled():
+        return
+    if _disk_cache_ttl() == 0:
+        return
+    path = _disk_cache_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            path.parent.chmod(stat.S_IRWXU)  # 0700
+        except OSError:
+            pass
+        payload = json.dumps(
+            {"timestamp": time.time(), "folder": vault_folder(), "secrets": secrets}
+        )
+        # Write via tempfile in the same dir so the atomic replace stays on one FS,
+        # and so we can chmod 0600 before the file is visible at its final name.
+        fd, tmp_name = tempfile.mkstemp(prefix=".vault-", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "w") as fh:
+                fh.write(payload)
+            os.chmod(tmp_name, stat.S_IRUSR | stat.S_IWUSR)  # 0600
+            os.replace(tmp_name, path)
+        except OSError:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+    except OSError as exc:
+        logger.debug("failed to write vault cache at %s: %s", path, exc)
+
+
+def _get_client() -> Any | None:
+    global _client
+    if _client is not None:
+        return _client
+    try:
+        from locke.vault import VaultClient
     except ImportError:
-        logger.debug("locke not installed; %s is env-var only", env_var)
+        logger.debug("locke not installed; vault lookups disabled")
         return None
-
     try:
-        return get_vault_secret(path)
-    except Exception as exc:  # noqa: BLE001 - credential backends should be best-effort here.
-        logger.debug("failed to fetch %s from Locke/Vaultwarden: %s", path, exc)
+        _client = VaultClient.connect()
+    except Exception as exc:  # noqa: BLE001 - credential backends are best-effort.
+        logger.debug("failed to connect to Locke/Vaultwarden: %s", exc)
         return None
+    return _client
+
+
+def _warm_from_locke() -> None:
+    """Bulk-fetch every known secret in a single ``list_secrets()`` call.
+
+    Populates ``_memcache`` with ``None`` for any known env var that isn't in
+    the vault, so subsequent lookups don't re-hit Vaultwarden.
+    """
+    client = _get_client()
+    if client is None:
+        return
+    prefix = f"{vault_folder()}/"
+    try:
+        secrets = client.list_secrets(prefix)
+    except Exception as exc:  # noqa: BLE001 - credential backends are best-effort.
+        logger.debug("failed to list secrets from Locke/Vaultwarden: %s", exc)
+        return
+    cleaned: dict[str, str] = {}
+    for path, value in secrets.items():
+        if isinstance(path, str) and path.startswith(prefix) and isinstance(value, str):
+            cleaned[path[len(prefix):]] = value
+    _apply_snapshot(cleaned)
+    _save_disk_cache(cleaned)
+
+
+def _apply_snapshot(snapshot: dict[str, str]) -> None:
+    """Populate ``_memcache`` for every known env var from a vault snapshot."""
+    for env_var, secret_name in SECRET_MAP.items():
+        if env_var in _memcache:
+            continue
+        _memcache[env_var] = snapshot.get(secret_name)
+
+
+def _ensure_warmed() -> None:
+    global _warmed
+    if _warmed:
+        return
+    snapshot = _load_disk_cache()
+    if snapshot is not None:
+        _apply_snapshot(snapshot)
+    else:
+        _warm_from_locke()
+    _warmed = True
 
 
 def get_secret(env_var: str) -> str | None:
     """Resolve a value from env first, then Locke/Vaultwarden when available."""
-    if env_var in _cache:
-        return _cache[env_var]
+    with _lock:
+        if env_var in _memcache:
+            return _memcache[env_var]
 
-    value = os.getenv(env_var)
-    if value:
-        _cache[env_var] = value
-        return value
+        value = os.getenv(env_var)
+        if value:
+            _memcache[env_var] = value
+            return value
 
-    value = _fetch_from_locke(env_var)
-    if value:
-        _cache[env_var] = value
-        return value
+        _ensure_warmed()
+        return _memcache.get(env_var)
 
-    return None
+
+def _reset_for_tests() -> None:
+    """Clear in-process caches. Intended for use in tests only."""
+    global _client, _warmed
+    with _lock:
+        _memcache.clear()
+        _client = None
+        _warmed = False

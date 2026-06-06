@@ -26,6 +26,12 @@ Ojiichan resolves explicit environment variables first, then Locke/Vaultwarden s
 Default vault folder: `ojiichan`.
 Override it with `OJIICHAN_VAULT_FOLDER` when needed.
 
+To minimise Vaultwarden rate-limit pressure, all known secrets are warmed in one `list_secrets` call per process and snapshotted to a `0600` file under `${XDG_CACHE_HOME:-~/.cache}/ojiichan/`. Knobs:
+
+- `OJIICHAN_VAULT_CACHE_TTL` — seconds (default `300`, set `0` to disable disk cache only).
+- `OJIICHAN_VAULT_CACHE_DISABLE` — any non-empty value disables the on-disk snapshot entirely.
+- `OJIICHAN_VAULT_CACHE_PATH` — override the cache file path.
+
 Non-secret options can still be set as env vars, for example `ELASTICSEARCH_PORT`, `ELASTICSEARCH_USE_SSL`, `ELASTICSEARCH_VERIFY_CERTS`, `ELASTICSEARCH_TIMEOUT`, and `BUGSINK_TIMEOUT`.
 
 ## CLI
