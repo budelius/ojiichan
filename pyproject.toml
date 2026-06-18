@@ -1,6 +1,6 @@
 [project]
 name = "ojiichan"
-version = "0.4.0"
+version = "0.5.0"
 description = "Pseekoo diagnostics toolkit for ELK, Rustrak/Sentry/Bugsink, Scaleway Cockpit logs, and issue handoff workflows."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -54,6 +54,12 @@ select = ["E", "F", "I", "UP", "B"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Scaffold templates live under src/ojiichan/scaffolds/**/src/lib/, which the
+# repo .gitignore excludes (lib/). Force them into the build artifacts so the
+# `ojiichan scaffold` command works from an installed wheel.
+[tool.hatch.build]
+artifacts = ["src/ojiichan/scaffolds/**/*.tmpl"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ojiichan", "src/ojiichan_mcp"]

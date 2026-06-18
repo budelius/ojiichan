@@ -21,6 +21,7 @@ from ojiichan.bugsink import BugsinkClient, check_bugsink
 from ojiichan.dsl import parse_annotation
 from ojiichan.elk import ElkClient, check_elk
 from ojiichan.rustrak import RustrakClient, check_rustrak
+from ojiichan.scaffold import available_languages, render_files
 from ojiichan.scaleway import ScalewayLogsClient, check_scaleway
 from ojiichan.sentry import SentryApiClient
 
@@ -143,8 +144,32 @@ def bugsink_issues(hours: int = 24, top: int = 10) -> dict[str, Any]:
 
 @mcp.tool()
 def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
-    """Parse an `ojiichan: key=value` code comment into diagnostic fields."""
+    """Parse an `ojiichan: key=value` code comment into diagnostic fields.
+
+    Accepts Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc
+    (`/* ... */`, `*`) comment markers.
+    """
     return parse_annotation(text).to_event_data()
+
+
+@mcp.tool()
+def scaffold_observability(language: str, backend: str = "rustrak") -> dict[str, Any]:
+    """Render observability setup files for a non-Python service.
+
+    Returns the rendered file contents (the agent writes them) so a TypeScript or
+    Rust service can report to the same ELK + Rustrak/Sentry stack as the Python
+    services: Sentry/Rustrak error reporting plus ELK structured events.
+
+    Args:
+        language: Target language, one of "typescript" or "rust".
+        backend: Error-reporting backend referenced in the files
+            (``rustrak`` / ``sentry`` / ``bugsink``); the SDK wiring is identical.
+    """
+    try:
+        files = render_files(language, backend=backend)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "languages": list(available_languages())}
+    return {"ok": True, "language": language, "backend": backend, "files": files}
 
 
 @mcp.tool()

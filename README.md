@@ -11,6 +11,10 @@ It standardizes the same observability workflow across Python services — and r
 platform runtime logs (Scaleway Serverless Functions stdout/stderr) alongside
 application events, so one tool covers app-level *and* infra-level diagnostics.
 
+Sibling services in other languages can't import the Python library, so ojiichan
+also **scaffolds** env-driven TypeScript and Rust equivalents (`ojiichan scaffold
+--lang typescript|rust`) that report to the same ELK + Rustrak/Sentry stack.
+
 ## Install
 
 ```bash
@@ -40,6 +44,10 @@ ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
 ojiichan resolve-issue 7b3a... --backend rustrak --project-id 42
 ojiichan resolve-issue 98765 --backend sentry
 
+# Scaffold observability setup for a TypeScript or Rust service
+ojiichan scaffold --lang typescript --backend rustrak --dir ../m3rp-api
+ojiichan scaffold --lang rust --dir ../some-rust-service
+
 # Scaleway Cockpit (Loki) runtime logs — e.g. a Serverless Function's stdout/stderr
 ojiichan logs --backend scaleway --hours 2 --failures-only
 ojiichan logs --backend scaleway --source m3rp-api-staging-api --topic "Login failed"
@@ -59,6 +67,38 @@ or export `OJIICHAN_SCALEWAY_LOKI_URL` / `OJIICHAN_SCALEWAY_COCKPIT_TOKEN`):
 scw cockpit data-source list region=fr-par          # copy the type=logs "url"
 scw cockpit token create name=ojiichan region=fr-par token-scopes.query_logs=true
 ```
+
+## Scaffolding TypeScript / Rust services
+
+ojiichan's Python library can't run inside a Node or Rust service, so `ojiichan
+scaffold` writes env-driven equivalents that report to the same backends —
+Sentry/Rustrak error reporting plus ELK structured events.
+
+```bash
+ojiichan scaffold --lang typescript --backend rustrak --dir ./service
+ojiichan scaffold --lang rust --dir ./service          # add --force to overwrite
+```
+
+Generated files (existing files are skipped unless `--force`):
+
+- **TypeScript** — `src/lib/config.ts` (env resolution), `src/lib/sentry.ts`
+  (`initSentry` / `captureException` / `flushSentry`), `src/lib/elk.ts`
+  (`logEvent`), `src/handler-scaleway.ts` (a `withObservability` wrapper that
+  flushes before a Serverless Function freezes), and `OBSERVABILITY.md`.
+- **Rust** — `src/observability.rs` (`init_sentry` / `capture_error` /
+  `log_event`) and `OBSERVABILITY.md`.
+
+Every value is read from the environment, preferring an `OJIICHAN_`-prefixed
+override then the conventional name (`SENTRY_DSN`, `ELASTICSEARCH_HOST`, …), so
+the scaffolded service shares the Python toolkit's resolution order. The
+generated `OBSERVABILITY.md` lists the required packages (`@sentry/node`;
+`sentry` + `reqwest` crates) and wiring steps. The `--backend` flag only adjusts
+the documentation references — the SDK wiring is identical because Rustrak is
+Sentry-compatible.
+
+`ojiichan: key=value` diagnostic annotations (below) are recognized in `//`,
+`///`, `//!`, and `/* … */` comments too, so the hints work in TypeScript and
+Rust source.
 
 ## Library
 
@@ -146,6 +186,8 @@ Or use a nearby comment that agents can parse/read:
 # ojiichan: operation=matrix_exchange topic=auth failure=true issue_backend=bugsink tags=matrix,auth
 ```
 
+The comment form is recognized with Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc (`/* … */`, `*`) markers, so the same annotation works across Python, TypeScript, and Rust source.
+
 Hints line up with ELK fields (`operation`, `topic`, `failure`) and issue tooling (`issue_backend`, `issue_query`, `runbook`) so an agent can jump from code to logs/issues quickly.
 
 ## MCP server
@@ -189,6 +231,7 @@ Exposed tools:
 - `rustrak_resolve_issue`
 - `rustrak_health`
 - `rustrak_issues`
+- `scaffold_observability` (renders TypeScript/Rust setup files)
 - `create_bead_from_issue`
 - `xcode_build`
 - `xcode_test`

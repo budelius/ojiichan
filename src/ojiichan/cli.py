@@ -10,9 +10,10 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
-from .config import RustrakConfig, ScalewayConfig, default_issue_backend
+from .config import ISSUE_BACKENDS, RustrakConfig, ScalewayConfig, default_issue_backend
 from .elk import ElkClient, check_elk
 from .rustrak import RustrakClient, check_rustrak
+from .scaffold import available_languages, scaffold
 from .scaleway import ScalewayLogsClient, check_scaleway
 from .sentry import SentryApiClient
 
@@ -176,6 +177,24 @@ def cmd_emit(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_scaffold(args: argparse.Namespace) -> int:
+    result = scaffold(args.lang, backend=args.backend, dest=args.dir, force=args.force)
+    if args.json:
+        _print_json(result.__dict__)
+    else:
+        print(
+            f"Scaffolded {result.language} observability "
+            f"(backend={result.backend}) -> {result.dest}"
+        )
+        for rel in result.written:
+            print(f"  + {rel}")
+        for rel in result.skipped:
+            print(f"  = {rel} (exists; use --force to overwrite)")
+        if not result.written and result.skipped:
+            print("No files written; all targets already exist.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Reusable diagnostics for ELK + Bugsink/Sentry")
     parser.add_argument("--env-file", help="Load environment variables from a .env file")
@@ -234,6 +253,31 @@ def build_parser() -> argparse.ArgumentParser:
     )
     resolve.add_argument("--json", action="store_true")
     resolve.set_defaults(func=cmd_resolve_issue)
+
+    scaffold_cmd = sub.add_parser(
+        "scaffold",
+        help="Write observability setup (Sentry/Rustrak + ELK) for a TS/Rust service",
+    )
+    scaffold_cmd.add_argument(
+        "--lang",
+        required=True,
+        choices=list(available_languages()),
+        help="Target language for the scaffolded files",
+    )
+    scaffold_cmd.add_argument(
+        "--backend",
+        default="rustrak",
+        choices=list(ISSUE_BACKENDS),
+        help="Error-reporting backend referenced in the generated files",
+    )
+    scaffold_cmd.add_argument(
+        "--dir", default=".", help="Destination directory (default: current directory)"
+    )
+    scaffold_cmd.add_argument(
+        "--force", action="store_true", help="Overwrite files that already exist"
+    )
+    scaffold_cmd.add_argument("--json", action="store_true")
+    scaffold_cmd.set_defaults(func=cmd_scaffold)
 
     return parser
 

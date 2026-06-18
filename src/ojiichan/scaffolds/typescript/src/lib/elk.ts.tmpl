@@ -1,0 +1,71 @@
+// ojiichan: scaffolded ELK structured event logging (backend=__OJIICHAN_BACKEND__)
+//
+// Posts one structured document per event to Elasticsearch, matching the index
+// naming and document shape produced by ojiichan's Python `ElkClient.log_event`
+// (`<index_prefix>-<topic>` / `_doc`). Falls back to console logging when ELK is
+// unconfigured or the request fails, so the diagnostics path never throws.
+//
+// Uses the global `fetch` (Node 18+); no Elasticsearch client dependency.
+
+import { elkBaseUrl, elkConfig, env } from "./config";
+
+const SERVICE = env("SERVICE_NAME") ?? env("APP_NAME") ?? "app";
+
+export interface LogEventOptions {
+  level?: string;
+  topic?: string;
+  subtype?: string;
+  failure?: boolean;
+  // Keys removed from the payload before indexing — keep secrets out of ELK.
+  redactKeys?: string[];
+}
+
+export async function logEvent(
+  eventType: string,
+  data: Record<string, unknown> = {},
+  opts: LogEventOptions = {},
+): Promise<boolean> {
+  const cfg = elkConfig();
+  const baseUrl = elkBaseUrl(cfg);
+
+  const payload: Record<string, unknown> = { ...data };
+  for (const key of opts.redactKeys ?? []) delete payload[key];
+
+  const document: Record<string, unknown> = {
+    "@timestamp": new Date().toISOString(),
+    event_type: eventType,
+    operation: (payload.operation as string | undefined) ?? eventType,
+    level: opts.level ?? "info",
+    service: SERVICE,
+    ...payload,
+  };
+  if (opts.subtype) document.subtype = opts.subtype;
+  if (opts.failure !== undefined) document.failure = opts.failure;
+
+  const index = `${cfg.indexPrefix}-${opts.topic ?? eventType}`;
+  const log = opts.failure ? console.error : console.log;
+
+  if (!baseUrl) {
+    log(`[ELK:${index}]`, document);
+    return false;
+  }
+
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (cfg.username && cfg.password) {
+    const token = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
+    headers.Authorization = `Basic ${token}`;
+  }
+
+  try {
+    const res = await fetch(`${baseUrl}/${index}/_doc`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(document),
+      signal: AbortSignal.timeout(cfg.timeoutMs),
+    });
+    return res.ok;
+  } catch (err) {
+    log(`[ELK:${index}]`, document, err);
+    return false;
+  }
+}

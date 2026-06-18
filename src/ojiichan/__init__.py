@@ -4,6 +4,7 @@ from .bugsink import BugsinkClient, BugsinkIssue, check_bugsink
 from .dsl import DiagnosticHint, diagnostic, get_diagnostic, hint, parse_annotation
 from .elk import ElkClient, check_elk, query_elk_logs
 from .rustrak import RustrakClient, RustrakIssue, check_rustrak
+from .scaffold import ScaffoldResult, available_languages, render_files, scaffold
 from .scaleway import ScalewayLogEntry, ScalewayLogsClient, check_scaleway, query_scaleway_logs
 from .sentry import SentryApiClient, capture_exception, init_sentry
 
@@ -14,9 +15,11 @@ __all__ = [
     "ElkClient",
     "RustrakClient",
     "RustrakIssue",
+    "ScaffoldResult",
     "ScalewayLogEntry",
     "ScalewayLogsClient",
     "SentryApiClient",
+    "available_languages",
     "capture_exception",
     "check_bugsink",
     "check_elk",
@@ -29,4 +32,6 @@ __all__ = [
     "parse_annotation",
     "query_elk_logs",
     "query_scaleway_logs",
+    "render_files",
+    "scaffold",
 ]

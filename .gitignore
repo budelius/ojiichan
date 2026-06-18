@@ -171,3 +171,10 @@ cython_debug/
 # Local hook/debug outputs
 /hook_outputs/
 **/hook_outputs/
+
+# Keep ojiichan's bundled scaffold templates tracked even though they live
+# under a src/lib/ path that the generic lib/ rule above would otherwise ignore.
+!src/ojiichan/scaffolds/**/
+!src/ojiichan/scaffolds/**
+# ...but never the compiled bytecode the negation above would otherwise re-add.
+src/ojiichan/scaffolds/**/__pycache__/
