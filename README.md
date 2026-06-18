@@ -96,6 +96,31 @@ generated `OBSERVABILITY.md` lists the required packages (`@sentry/node`;
 the documentation references — the SDK wiring is identical because Rustrak is
 Sentry-compatible.
 
+### Integrating into a service that already has diagnostics (for agents)
+
+If the target repo already ships its own observability module (e.g. a
+hand-written `server/diagnostics.ts`), **do not** dump the scaffold over it —
+that duplicates functionality and fights the repo's structure (`server/` vs
+`src/lib/`, an Elasticsearch client vs `fetch`, etc.). Instead:
+
+1. **Scaffold to a throwaway dir** to get the canonical reference:
+   `ojiichan scaffold --lang typescript --backend rustrak --dir /tmp/oji`.
+2. **Diff each concern** (config resolution, `initSentry`, `captureException`,
+   `logEvent`, the Scaleway wrapper) against the repo's existing module.
+3. **Port only the missing pieces**, keeping the repo's conventions. The piece
+   most often missing is the **flush-before-freeze** step: short-lived runtimes
+   (Scaleway/Lambda Serverless Functions) freeze the process the instant the
+   handler returns, dropping any buffered Sentry event. The fix is the
+   `withObservability` shape from `src/handler-scaleway.ts` — wrap the exported
+   handler so it `captureException`s on throw and **always** `await flushSentry()`
+   in a `finally`. Keep the module's public surface compatible with this
+   standard so `initSentry / captureException / logEvent / flushSentry` mean the
+   same thing across services.
+
+Where to look: the rendered `OBSERVABILITY.md` (wiring + env table), and the
+templates under `src/ojiichan/scaffolds/typescript/` in this repo for the
+reference implementation.
+
 `ojiichan: key=value` diagnostic annotations (below) are recognized in `//`,
 `///`, `//!`, and `/* … */` comments too, so the hints work in TypeScript and
 Rust source.
