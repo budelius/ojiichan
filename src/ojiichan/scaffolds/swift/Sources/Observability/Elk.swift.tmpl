@@ -1,0 +1,97 @@
+// ojiichan: scaffolded ELK structured event logging (backend=__OJIICHAN_BACKEND__)
+//
+// Posts one structured document per event to Elasticsearch, matching the index
+// naming and document shape produced by ojiichan's Python `ElkClient.log_event`
+// (`<index_prefix>-<topic>` / `_doc`). Falls back to console logging when ELK is
+// unconfigured or the request fails, so the diagnostics path never throws.
+//
+// Uses `URLSession` from Foundation; no Elasticsearch client dependency.
+
+import Foundation
+
+public struct LogEventOptions {
+    public var level: String
+    public var topic: String?
+    public var subtype: String?
+    public var failure: Bool?
+    // Keys removed from the payload before indexing — keep secrets out of ELK.
+    public var redactKeys: [String]
+
+    public init(
+        level: String = "info",
+        topic: String? = nil,
+        subtype: String? = nil,
+        failure: Bool? = nil,
+        redactKeys: [String] = []
+    ) {
+        self.level = level
+        self.topic = topic
+        self.subtype = subtype
+        self.failure = failure
+        self.redactKeys = redactKeys
+    }
+}
+
+private func serviceName() -> String {
+    env("SERVICE_NAME") ?? env("APP_NAME") ?? "app"
+}
+
+@discardableResult
+public func logEvent(
+    _ eventType: String,
+    data: [String: Any] = [:],
+    options: LogEventOptions = LogEventOptions()
+) async -> Bool {
+    let cfg = elkConfig()
+
+    var payload = data
+    for key in options.redactKeys { payload.removeValue(forKey: key) }
+
+    var document = payload
+    document["@timestamp"] = ISO8601DateFormatter().string(from: Date())
+    document["event_type"] = eventType
+    document["operation"] = (payload["operation"] as? String) ?? eventType
+    document["level"] = options.level
+    document["service"] = serviceName()
+    if let subtype = options.subtype { document["subtype"] = subtype }
+    if let failure = options.failure { document["failure"] = failure }
+
+    let index = "\(cfg.indexPrefix)-\(options.topic ?? eventType)"
+
+    func logLocally(_ suffix: String = "") {
+        FileHandle.standardError.write(
+            Data("[ELK:\(index)] \(document)\(suffix)\n".utf8)
+        )
+    }
+
+    guard let base = elkBaseURL(cfg) else {
+        logLocally()
+        return false
+    }
+
+    guard
+        let url = URL(string: "\(base)/\(index)/_doc"),
+        let body = try? JSONSerialization.data(withJSONObject: document)
+    else {
+        logLocally(" (failed to encode document)")
+        return false
+    }
+
+    var request = URLRequest(url: url, timeoutInterval: cfg.timeout)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = body
+    if let user = cfg.username, let password = cfg.password {
+        let token = Data("\(user):\(password)".utf8).base64EncodedString()
+        request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
+    }
+
+    do {
+        let (_, response) = try await URLSession.shared.data(for: request)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        return (200..<300).contains(status)
+    } catch {
+        logLocally(" send failed: \(error)")
+        return false
+    }
+}

@@ -1,0 +1,51 @@
+// ojiichan: scaffolded Sentry/__OJIICHAN_BACKEND__ error reporting
+//
+// Rustrak is Sentry-compatible, so the sentry-cocoa SDK ingests to it via
+// SENTRY_DSN. Everything no-ops when SENTRY_DSN is unset, so local/dev runs and
+// tests stay quiet. Mirrors `init_sentry` / `capture_exception` in ojiichan's
+// Python `sentry.py`.
+//
+// Add the dependency (Swift Package Manager):
+//   .package(url: "https://github.com/getsentry/sentry-cocoa", from: "8.0.0")
+// and list "Sentry" among your target's dependencies.
+
+import Foundation
+import Sentry
+
+private var initialized = false
+
+// Initialize the SDK if a DSN is configured. Returns true when initialized,
+// false when there is no DSN (the no-op path).
+@discardableResult
+public func initSentry() -> Bool {
+    if initialized { return true }
+    let cfg = sentryConfig()
+    guard let dsn = cfg.dsn else { return false }
+    SentrySDK.start { options in
+        options.dsn = dsn
+        if let environment = cfg.environment { options.environment = environment }
+        if let release = cfg.release { options.releaseName = release }
+        options.tracesSampleRate = NSNumber(value: cfg.tracesSampleRate)
+    }
+    initialized = true
+    return true
+}
+
+public func captureException(_ error: Error, context: [String: Any] = [:]) {
+    guard initialized else { return }
+    SentrySDK.capture(error: error) { scope in
+        for (key, value) in context {
+            scope.setExtra(value: value, key: key)
+        }
+    }
+}
+
+// Flush buffered events. Critical before the process can suspend or exit (app
+// backgrounding, CLI shutdown, short-lived server runtimes) so events are
+// delivered rather than dropped.
+@discardableResult
+public func flushSentry(timeout: TimeInterval = 2.0) -> Bool {
+    guard initialized else { return false }
+    SentrySDK.flush(timeout: timeout)
+    return true
+}

@@ -1,4 +1,4 @@
-"""Scaffold observability setup for non-Python services (TypeScript, Rust).
+"""Scaffold observability setup for non-Python services (TypeScript, Rust, Swift).
 
 ojiichan standardizes the ELK + Rustrak/Sentry + Scaleway workflow across Python
 services. Sibling services written in other languages can't import the Python
@@ -29,6 +29,12 @@ LANGUAGE_FILES: dict[str, tuple[str, ...]] = {
     "rust": (
         "OBSERVABILITY.md",
         "src/observability.rs",
+    ),
+    "swift": (
+        "OBSERVABILITY.md",
+        "Sources/Observability/Config.swift",
+        "Sources/Observability/Sentry.swift",
+        "Sources/Observability/Elk.swift",
     ),
 }
 

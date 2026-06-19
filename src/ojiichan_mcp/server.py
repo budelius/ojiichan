@@ -156,12 +156,12 @@ def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
 def scaffold_observability(language: str, backend: str = "rustrak") -> dict[str, Any]:
     """Render observability setup files for a non-Python service.
 
-    Returns the rendered file contents (the agent writes them) so a TypeScript or
-    Rust service can report to the same ELK + Rustrak/Sentry stack as the Python
-    services: Sentry/Rustrak error reporting plus ELK structured events.
+    Returns the rendered file contents (the agent writes them) so a TypeScript,
+    Rust, or Swift service can report to the same ELK + Rustrak/Sentry stack as the
+    Python services: Sentry/Rustrak error reporting plus ELK structured events.
 
     Args:
-        language: Target language, one of "typescript" or "rust".
+        language: Target language, one of "typescript", "rust", or "swift".
         backend: Error-reporting backend referenced in the files
             (``rustrak`` / ``sentry`` / ``bugsink``); the SDK wiring is identical.
     """

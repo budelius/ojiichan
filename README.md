@@ -12,8 +12,9 @@ platform runtime logs (Scaleway Serverless Functions stdout/stderr) alongside
 application events, so one tool covers app-level *and* infra-level diagnostics.
 
 Sibling services in other languages can't import the Python library, so ojiichan
-also **scaffolds** env-driven TypeScript and Rust equivalents (`ojiichan scaffold
---lang typescript|rust`) that report to the same ELK + Rustrak/Sentry stack.
+also **scaffolds** env-driven TypeScript, Rust, and Swift equivalents (`ojiichan
+scaffold --lang typescript|rust|swift`) that report to the same ELK +
+Rustrak/Sentry stack — including first-class iOS/macOS (Swift) support.
 
 ## Install
 
@@ -50,9 +51,10 @@ ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
 ojiichan resolve-issue 7b3a... --backend rustrak --project-id 42
 ojiichan resolve-issue 98765 --backend sentry
 
-# Scaffold observability setup for a TypeScript or Rust service
+# Scaffold observability setup for a TypeScript, Rust, or Swift service
 ojiichan scaffold --lang typescript --backend rustrak --dir ../m3rp-api
 ojiichan scaffold --lang rust --dir ../some-rust-service
+ojiichan scaffold --lang swift --dir ../some-ios-app    # iOS/macOS, server-side Swift, CLI
 
 # Scaleway Cockpit (Loki) runtime logs — e.g. a Serverless Function's stdout/stderr
 ojiichan logs --backend scaleway --hours 2 --failures-only
@@ -74,15 +76,16 @@ scw cockpit data-source list region=fr-par          # copy the type=logs "url"
 scw cockpit token create name=ojiichan region=fr-par token-scopes.query_logs=true
 ```
 
-## Scaffolding TypeScript / Rust services
+## Scaffolding TypeScript / Rust / Swift services
 
-ojiichan's Python library can't run inside a Node or Rust service, so `ojiichan
-scaffold` writes env-driven equivalents that report to the same backends —
-Sentry/Rustrak error reporting plus ELK structured events.
+ojiichan's Python library can't run inside a Node, Rust, or Swift service, so
+`ojiichan scaffold` writes env-driven equivalents that report to the same
+backends — Sentry/Rustrak error reporting plus ELK structured events.
 
 ```bash
 ojiichan scaffold --lang typescript --backend rustrak --dir ./service
 ojiichan scaffold --lang rust --dir ./service          # add --force to overwrite
+ojiichan scaffold --lang swift --dir ./ios-app         # iOS/macOS, server-side Swift, CLI
 ```
 
 Generated files (existing files are skipped unless `--force`):
@@ -93,14 +96,19 @@ Generated files (existing files are skipped unless `--force`):
   flushes before a Serverless Function freezes), and `OBSERVABILITY.md`.
 - **Rust** — `src/observability.rs` (`init_sentry` / `capture_error` /
   `log_event`) and `OBSERVABILITY.md`.
+- **Swift** — `Sources/Observability/Config.swift` (env resolution),
+  `Sources/Observability/Sentry.swift` (`initSentry` / `captureException` /
+  `flushSentry` via sentry-cocoa), `Sources/Observability/Elk.swift` (`logEvent`
+  over `URLSession`, `async`), and `OBSERVABILITY.md`. Works in iOS/macOS apps,
+  server-side Swift, and CLI tools.
 
 Every value is read from the environment, preferring an `OJIICHAN_`-prefixed
 override then the conventional name (`SENTRY_DSN`, `ELASTICSEARCH_HOST`, …), so
 the scaffolded service shares the Python toolkit's resolution order. The
 generated `OBSERVABILITY.md` lists the required packages (`@sentry/node`;
-`sentry` + `reqwest` crates) and wiring steps. The `--backend` flag only adjusts
-the documentation references — the SDK wiring is identical because Rustrak is
-Sentry-compatible.
+`sentry` + `reqwest` crates; the `sentry-cocoa` SwiftPM package) and wiring
+steps. The `--backend` flag only adjusts the documentation references — the SDK
+wiring is identical because Rustrak is Sentry-compatible.
 
 ### Integrating into a service that already has diagnostics (for agents)
 
@@ -128,8 +136,8 @@ templates under `src/ojiichan/scaffolds/typescript/` in this repo for the
 reference implementation.
 
 `ojiichan: key=value` diagnostic annotations (below) are recognized in `//`,
-`///`, `//!`, and `/* … */` comments too, so the hints work in TypeScript and
-Rust source.
+`///`, `//!`, and `/* … */` comments too, so the hints work in TypeScript,
+Rust, and Swift source.
 
 ## Library
 

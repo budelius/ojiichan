@@ -256,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     scaffold_cmd = sub.add_parser(
         "scaffold",
-        help="Write observability setup (Sentry/Rustrak + ELK) for a TS/Rust service",
+        help="Write observability setup (Sentry/Rustrak + ELK) for a TS/Rust/Swift service",
     )
     scaffold_cmd.add_argument(
         "--lang",

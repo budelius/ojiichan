@@ -14,9 +14,16 @@ _TS_FILES = {
     "src/handler-scaleway.ts",
 }
 
+_SWIFT_FILES = {
+    "OBSERVABILITY.md",
+    "Sources/Observability/Config.swift",
+    "Sources/Observability/Sentry.swift",
+    "Sources/Observability/Elk.swift",
+}
+
 
 def test_available_languages() -> None:
-    assert set(available_languages()) == {"typescript", "rust"}
+    assert set(available_languages()) == {"typescript", "rust", "swift"}
 
 
 def test_render_typescript_contains_expected_files() -> None:
@@ -37,6 +44,17 @@ def test_render_rust_contains_module() -> None:
     assert "pub fn init_sentry" in body
     assert "pub fn log_event" in body
     assert "_doc" in body
+
+
+def test_render_swift_contains_expected_files() -> None:
+    files = render_files("swift", backend="rustrak")
+    assert set(files) == _SWIFT_FILES
+    sentry = files["Sources/Observability/Sentry.swift"]
+    assert "func initSentry" in sentry
+    assert "func captureException" in sentry
+    assert "func flushSentry" in sentry
+    assert "_doc" in files["Sources/Observability/Elk.swift"]
+    assert "ProcessInfo.processInfo.environment" in files["Sources/Observability/Config.swift"]
 
 
 def test_backend_token_substituted() -> None:
@@ -67,6 +85,13 @@ def test_scaffold_writes_then_skips(tmp_path: Path) -> None:
     again = scaffold("typescript", dest=tmp_path)
     assert again.written == []
     assert set(again.skipped) == _TS_FILES
+
+
+def test_scaffold_swift_creates_nested_dirs(tmp_path: Path) -> None:
+    result = scaffold("swift", dest=tmp_path)
+    assert (tmp_path / "Sources/Observability/Sentry.swift").is_file()
+    assert set(result.written) == _SWIFT_FILES
+    assert result.skipped == []
 
 
 def test_scaffold_force_overwrites(tmp_path: Path) -> None:

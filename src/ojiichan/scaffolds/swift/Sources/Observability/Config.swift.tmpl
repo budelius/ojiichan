@@ -1,0 +1,94 @@
+// ojiichan: scaffolded observability config (backend=__OJIICHAN_BACKEND__)
+//
+// Mirrors ojiichan's Python `config.py`, adapted so the same wiring works in a
+// native app *and* in server-side Swift / CLI tools. Each value resolves an
+// `OJIICHAN_`-prefixed override first, then the conventional variable name.
+//
+// Resolution order per key:
+//   1. Process environment — server-side Swift, CLI tools, CI, and Xcode scheme
+//      environment variables.
+//   2. Info.plist (`Bundle.main`) — where an iOS/macOS app gets its values,
+//      typically fed from an `.xcconfig` build setting via `$(VAR)` substitution.
+//
+// So apps configure via Info.plist/xcconfig by default, while the environment
+// still overrides for local runs and headless contexts.
+
+import Foundation
+
+public func env(_ name: String, default fallback: String? = nil) -> String? {
+    let environment = ProcessInfo.processInfo.environment
+    if let value = environment["OJIICHAN_\(name)"] ?? environment[name] {
+        return value
+    }
+    if let value = infoPlistValue("OJIICHAN_\(name)") ?? infoPlistValue(name) {
+        return value
+    }
+    return fallback
+}
+
+// Read a string from the main bundle's Info.plist. Unresolved `$(VAR)` build
+// settings substitute to an empty string, so blanks are treated as absent —
+// keeping the no-op path (unset ⇒ reporting/ELK disabled) intact.
+private func infoPlistValue(_ key: String) -> String? {
+    guard let value = Bundle.main.object(forInfoDictionaryKey: key) as? String else {
+        return nil
+    }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+public func envBool(_ name: String, default fallback: Bool = false) -> Bool {
+    guard let value = env(name)?.lowercased() else { return fallback }
+    return ["1", "true", "yes", "on"].contains(value)
+}
+
+public struct SentryConfig {
+    public let dsn: String?
+    public let environment: String?
+    public let release: String?
+    public let service: String?
+    public let tracesSampleRate: Double
+}
+
+public func sentryConfig() -> SentryConfig {
+    SentryConfig(
+        dsn: env("SENTRY_DSN"),
+        environment: env("ENVIRONMENT") ?? env("APP_ENV") ?? env("ENV"),
+        release: env("RELEASE") ?? env("GIT_COMMIT"),
+        service: env("SERVICE_NAME") ?? env("APP_NAME"),
+        tracesSampleRate: Double(env("SENTRY_TRACES_SAMPLE_RATE", default: "0") ?? "0") ?? 0
+    )
+}
+
+public struct ElkConfig {
+    public let host: String?
+    public let port: Int
+    public let username: String?
+    public let password: String?
+    public let useSsl: Bool
+    public let verifyCerts: Bool
+    public let indexPrefix: String
+    public let timeout: TimeInterval
+}
+
+public func elkConfig() -> ElkConfig {
+    ElkConfig(
+        host: env("ELASTICSEARCH_HOST"),
+        port: Int(env("ELASTICSEARCH_PORT", default: "443") ?? "443") ?? 443,
+        username: env("ELASTICSEARCH_USERNAME"),
+        password: env("ELASTICSEARCH_PASSWORD"),
+        useSsl: envBool("ELASTICSEARCH_USE_SSL", default: true),
+        verifyCerts: envBool("ELASTICSEARCH_VERIFY_CERTS", default: true),
+        indexPrefix: env("ELASTICSEARCH_INDEX_PREFIX", default: "app") ?? "app",
+        timeout: Double(env("ELASTICSEARCH_TIMEOUT", default: "10") ?? "10") ?? 10
+    )
+}
+
+// Build the Elasticsearch base URL, honoring a host that already carries a
+// scheme (mirrors `ElkConfig.url` in the Python toolkit).
+public func elkBaseURL(_ cfg: ElkConfig = elkConfig()) -> String? {
+    guard let host = cfg.host else { return nil }
+    if host.hasPrefix("http://") || host.hasPrefix("https://") { return host }
+    let scheme = cfg.useSsl ? "https" : "http"
+    return "\(scheme)://\(host):\(cfg.port)"
+}
