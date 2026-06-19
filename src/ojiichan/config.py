@@ -148,6 +148,43 @@ class RustrakConfig:
         return f"{scheme}://{netloc}/projects/{self.project_id}"
 
 
+@dataclass(frozen=True)
+class ScalewayConfig:
+    """Configuration for querying Scaleway Cockpit (Loki) logs.
+
+    Scaleway Serverless Functions ship their stdout/stderr to the project's
+    Cockpit, queryable through a Loki-compatible HTTP API. Point ``loki_url`` at
+    the project's logs data-source URL (``scw cockpit data-source list`` →
+    ``type=logs`` → ``url``) and ``token`` at a Cockpit token created with the
+    ``query_logs`` scope (``scw cockpit token create``).
+
+    ``resource_type`` is the default Loki label used as the stream selector;
+    callers narrow to a single function with the ``--source`` flag, which maps
+    to the ``resource_name`` label.
+    """
+
+    loki_url: str | None
+    token: str | None
+    resource_type: str = "serverless_function"
+    timeout: float = 15
+
+    @classmethod
+    def from_env(cls) -> ScalewayConfig:
+        return cls(
+            loki_url=(env("SCALEWAY_LOKI_URL") or "").rstrip("/") or None,
+            token=env("SCALEWAY_COCKPIT_TOKEN"),
+            resource_type=env("SCALEWAY_RESOURCE_TYPE", "serverless_function")
+            or "serverless_function",
+            timeout=float(env("SCALEWAY_TIMEOUT", "15") or "15"),
+        )
+
+    @property
+    def query_url(self) -> str | None:
+        if not self.loki_url:
+            return None
+        return f"{self.loki_url}/loki/api/v1/query_range"
+
+
 ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink")
 
 

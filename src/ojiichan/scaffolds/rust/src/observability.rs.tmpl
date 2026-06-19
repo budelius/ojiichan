@@ -1,0 +1,147 @@
+//! ojiichan: scaffolded observability (backend=__OJIICHAN_BACKEND__)
+//!
+//! Mirrors ojiichan's Python helpers for services that can't import the Python
+//! library: Sentry/__OJIICHAN_BACKEND__ error reporting plus ELK structured
+//! events. Every value is read from the environment, preferring an
+//! `OJIICHAN_`-prefixed override, then the conventional name.
+//!
+//! Cargo dependencies:
+//!
+//! ```toml
+//! sentry = "0.34"
+//! reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+//! serde_json = "1"
+//! chrono = "0.4"
+//! ```
+
+use std::env;
+
+/// Resolve a config value: `OJIICHAN_<NAME>` first, then the bare `<NAME>`.
+pub fn env_var(name: &str) -> Option<String> {
+    env::var(format!("OJIICHAN_{name}"))
+        .ok()
+        .or_else(|| env::var(name).ok())
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
+    match env_var(name) {
+        Some(value) => matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        None => default,
+    }
+}
+
+/// Initialize Sentry/__OJIICHAN_BACKEND__ when `SENTRY_DSN` is set.
+///
+/// Hold the returned guard for the lifetime of the process so buffered events
+/// are flushed on drop. Returns `None` (the no-op path) when no DSN is set.
+#[must_use]
+pub fn init_sentry() -> Option<sentry::ClientInitGuard> {
+    let dsn = env_var("SENTRY_DSN")?;
+    let environment = env_var("ENVIRONMENT")
+        .or_else(|| env_var("APP_ENV"))
+        .or_else(|| env_var("ENV"));
+    let release = env_var("RELEASE").or_else(|| env_var("GIT_COMMIT"));
+    let traces_sample_rate = env_var("SENTRY_TRACES_SAMPLE_RATE")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0.0);
+
+    Some(sentry::init((
+        dsn,
+        sentry::ClientOptions {
+            release: release.map(Into::into),
+            environment: environment.map(Into::into),
+            traces_sample_rate,
+            ..Default::default()
+        },
+    )))
+}
+
+/// Report an error to Sentry/__OJIICHAN_BACKEND__ (no-op until `init_sentry`).
+pub fn capture_error(err: &(dyn std::error::Error + 'static)) {
+    sentry::capture_error(err);
+}
+
+fn service() -> String {
+    env_var("SERVICE_NAME")
+        .or_else(|| env_var("APP_NAME"))
+        .unwrap_or_else(|| "app".to_string())
+}
+
+fn elk_base_url() -> Option<String> {
+    let host = env_var("ELASTICSEARCH_HOST")?;
+    if host.starts_with("http://") || host.starts_with("https://") {
+        return Some(host);
+    }
+    let scheme = if env_bool("ELASTICSEARCH_USE_SSL", true) {
+        "https"
+    } else {
+        "http"
+    };
+    let port = env_var("ELASTICSEARCH_PORT").unwrap_or_else(|| "443".to_string());
+    Some(format!("{scheme}://{host}:{port}"))
+}
+
+/// Ship one structured event to ELK, matching the index naming and document
+/// shape of ojiichan's Python `ElkClient.log_event`
+/// (`<index_prefix>-<topic>` / `_doc`).
+///
+/// Returns `false` (and logs to stderr) when ELK is unconfigured or the request
+/// fails — the diagnostics path never panics.
+pub fn log_event(
+    event_type: &str,
+    data: serde_json::Value,
+    level: &str,
+    topic: Option<&str>,
+    failure: Option<bool>,
+) -> bool {
+    let mut document = serde_json::Map::new();
+    if let serde_json::Value::Object(map) = data {
+        document.extend(map);
+    }
+    let operation = document
+        .get("operation")
+        .and_then(|value| value.as_str())
+        .unwrap_or(event_type)
+        .to_string();
+
+    document.insert("@timestamp".into(), chrono::Utc::now().to_rfc3339().into());
+    document.insert("event_type".into(), event_type.into());
+    document.insert("operation".into(), operation.into());
+    document.insert("level".into(), level.into());
+    document.insert("service".into(), service().into());
+    if let Some(flag) = failure {
+        document.insert("failure".into(), flag.into());
+    }
+
+    let prefix = env_var("ELASTICSEARCH_INDEX_PREFIX").unwrap_or_else(|| "app".to_string());
+    let index = format!("{prefix}-{}", topic.unwrap_or(event_type));
+    let document = serde_json::Value::Object(document);
+
+    let Some(base) = elk_base_url() else {
+        eprintln!("[ELK:{index}] {document}");
+        return false;
+    };
+
+    let timeout = env_var("ELASTICSEARCH_TIMEOUT")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(10.0);
+    let client = reqwest::blocking::Client::new();
+    let mut request = client
+        .post(format!("{base}/{index}/_doc"))
+        .timeout(std::time::Duration::from_secs_f64(timeout))
+        .json(&document);
+    if let (Some(user), Some(password)) = (
+        env_var("ELASTICSEARCH_USERNAME"),
+        env_var("ELASTICSEARCH_PASSWORD"),
+    ) {
+        request = request.basic_auth(user, Some(password));
+    }
+
+    match request.send() {
+        Ok(response) => response.status().is_success(),
+        Err(err) => {
+            eprintln!("[ELK:{index}] send failed: {err}");
+            false
+        }
+    }
+}

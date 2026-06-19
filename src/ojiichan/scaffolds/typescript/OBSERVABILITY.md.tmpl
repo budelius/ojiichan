@@ -1,0 +1,69 @@
+# Observability (TypeScript)
+
+Scaffolded by [ojiichan](https://gitlab.com/martin-wieser/ojiichan) to wire this
+service into the same stack as the Python services: **ELK** structured events and
+**__OJIICHAN_BACKEND__** (Sentry-compatible) error reporting.
+
+## Install
+
+```bash
+npm install @sentry/node
+```
+
+`logEvent` uses the global `fetch` (Node 18+); no Elasticsearch client needed.
+
+## Files
+
+| File | Purpose |
+| --- | --- |
+| `src/lib/config.ts` | Env-driven config (`OJIICHAN_<NAME>` first, then `<NAME>`). |
+| `src/lib/sentry.ts` | `initSentry` / `captureException` / `flushSentry`. |
+| `src/lib/elk.ts` | `logEvent` — one structured doc per event to ELK. |
+| `src/handler-scaleway.ts` | `withObservability` wrapper for Scaleway functions. |
+
+## Wiring
+
+Initialize Sentry once at startup and report errors in your central handler
+(e.g. `api.ts`):
+
+```ts
+import { initSentry, captureException } from "./lib/sentry";
+
+initSentry();
+
+// in your error handler / dispatch catch:
+captureException(err, { route: req.path });
+```
+
+Emit structured events alongside errors:
+
+```ts
+import { logEvent } from "./lib/elk";
+
+await logEvent(
+  "matrix_exchange_failed",
+  { operation: "matrix_exchange", error: String(err) },
+  { level: "error", topic: "auth", failure: true },
+);
+```
+
+For Scaleway Serverless Functions, wrap the exported handler so events flush
+before the runtime freezes — see `src/handler-scaleway.ts`.
+
+## Environment
+
+| Variable | Purpose |
+| --- | --- |
+| `SENTRY_DSN` | __OJIICHAN_BACKEND__/Sentry ingest DSN. Unset ⇒ reporting no-ops. |
+| `ENVIRONMENT` / `APP_ENV` | Deployment environment tag. |
+| `RELEASE` / `GIT_COMMIT` | Release identifier. |
+| `SERVICE_NAME` / `APP_NAME` | Logical service name. |
+| `ELASTICSEARCH_HOST` | ELK host (with or without scheme). Unset ⇒ ELK no-ops. |
+| `ELASTICSEARCH_PORT` | Defaults to `443`. |
+| `ELASTICSEARCH_USERNAME` / `ELASTICSEARCH_PASSWORD` | Basic auth. |
+| `ELASTICSEARCH_INDEX_PREFIX` | Index prefix; defaults to `app`. |
+
+> **Self-signed ELK certs:** the global `fetch` validates TLS. For a self-signed
+> cluster, run the service with a custom `undici` `Agent` (or, as a last resort,
+> `NODE_TLS_REJECT_UNAUTHORIZED=0`) — `ELASTICSEARCH_VERIFY_CERTS=false` documents
+> intent but `fetch` does not read it.

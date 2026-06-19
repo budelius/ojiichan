@@ -96,8 +96,17 @@ def parse_annotation(text: str) -> DiagnosticHint:
     converted to a tuple. Unknown keys are ignored so comments can evolve safely.
     """
     raw = text.strip()
-    if raw.startswith("#"):
-        raw = raw[1:].strip()
+    # Strip a trailing block-comment close so ``/* ojiichan: ... */`` works.
+    if raw.endswith("*/"):
+        raw = raw[:-2].strip()
+    # Strip a leading comment marker. Order matters: longer/more specific markers
+    # (Rust ``///``/``//!`` docs, ``/*`` blocks) are checked before their prefixes
+    # so the right one wins. Covers Python/shell (``#``), C/Rust/TS (``//``), and
+    # block/JSDoc (``/*``, ``*``) comment styles.
+    for marker in ("//!", "///", "//", "#", "/*", "*"):
+        if raw.startswith(marker):
+            raw = raw[len(marker) :].strip()
+            break
     if raw.lower().startswith("ojiichan:"):
         raw = raw.split(":", 1)[1].strip()
 

@@ -1,0 +1,51 @@
+// ojiichan: scaffolded Sentry/__OJIICHAN_BACKEND__ error reporting
+//
+// Rustrak is Sentry-compatible, so the same @sentry/node SDK ingests to it via
+// SENTRY_DSN. Everything no-ops when SENTRY_DSN is unset, so local/dev runs and
+// tests stay quiet. Mirrors `init_sentry` / `capture_exception` in ojiichan's
+// Python `sentry.py`.
+//
+// Install: npm install @sentry/node
+
+import * as Sentry from "@sentry/node";
+
+import { sentryConfig } from "./config";
+
+let initialized = false;
+
+// Initialize the SDK if a DSN is configured. Returns true when initialized,
+// false when there is no DSN (the no-op path).
+export function initSentry(): boolean {
+  if (initialized) return true;
+  const cfg = sentryConfig();
+  if (!cfg.dsn) return false;
+  Sentry.init({
+    dsn: cfg.dsn,
+    environment: cfg.environment,
+    release: cfg.release,
+    serverName: cfg.service,
+    tracesSampleRate: cfg.tracesSampleRate,
+  });
+  initialized = true;
+  return true;
+}
+
+export function captureException(
+  err: unknown,
+  context: Record<string, unknown> = {},
+): void {
+  if (!initialized) return;
+  Sentry.withScope((scope) => {
+    for (const [key, value] of Object.entries(context)) {
+      scope.setExtra(key, value);
+    }
+    Sentry.captureException(err);
+  });
+}
+
+// Flush buffered events. Critical inside short-lived runtimes (e.g. Scaleway
+// Serverless Functions) that freeze the process right after the handler returns.
+export async function flushSentry(timeoutMs = 2000): Promise<boolean> {
+  if (!initialized) return false;
+  return Sentry.flush(timeoutMs);
+}

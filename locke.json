@@ -18,7 +18,9 @@
       "ojiichan/sentry-base-url": "Sentry-compatible API base URL; defaults to https://sentry.io",
       "ojiichan/rustrak-api-token": "DUMMY-rustrak-token-set-real-value-later",
       "ojiichan/rustrak-base-url": "Rustrak API base URL; defaults to https://ingest.rustrak.pseekoo.io (UI host is the same domain without the ingest. prefix)",
-      "ojiichan/rustrak-project-id": "Default Rustrak project id used when callers omit one"
+      "ojiichan/rustrak-project-id": "Default Rustrak project id used when callers omit one",
+      "ojiichan/scaleway/loki-url": "Scaleway Cockpit logs data-source URL (scw cockpit data-source list -> type=logs 'url')",
+      "ojiichan/scaleway/cockpit-token": "Scaleway Cockpit token with query_logs scope (scw cockpit token create ... token-scopes.query_logs=true)"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",
@@ -30,7 +32,9 @@
       "ELASTICSEARCH_TIMEOUT": "Elasticsearch timeout seconds; defaults to 10",
       "BUGSINK_TIMEOUT": "Bugsink API timeout seconds; defaults to 10",
       "SENTRY_TIMEOUT": "Sentry API timeout seconds; defaults to 10",
-      "RUSTRAK_TIMEOUT": "Rustrak API timeout seconds; defaults to 10"
+      "RUSTRAK_TIMEOUT": "Rustrak API timeout seconds; defaults to 10",
+      "SCALEWAY_RESOURCE_TYPE": "Loki resource_type label for the stream selector; defaults to serverless_function",
+      "SCALEWAY_TIMEOUT": "Scaleway Loki query timeout seconds; defaults to 15"
     }
   }
 }

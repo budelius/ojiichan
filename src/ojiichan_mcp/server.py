@@ -21,6 +21,8 @@ from ojiichan.bugsink import BugsinkClient, check_bugsink
 from ojiichan.dsl import parse_annotation
 from ojiichan.elk import ElkClient, check_elk
 from ojiichan.rustrak import RustrakClient, check_rustrak
+from ojiichan.scaffold import available_languages, render_files
+from ojiichan.scaleway import ScalewayLogsClient, check_scaleway
 from ojiichan.sentry import SentryApiClient
 
 mcp = FastMCP("ojiichan")
@@ -88,6 +90,43 @@ def emit_elk_event(
 
 
 @mcp.tool()
+def scaleway_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
+    """Check Scaleway Cockpit (Loki) reachability and recent failure-line volume.
+
+    Returns {"status": "fail"} with guidance when SCALEWAY_LOKI_URL /
+    SCALEWAY_COCKPIT_TOKEN are not configured.
+    """
+    return check_scaleway(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+
+
+@mcp.tool()
+def scaleway_logs(
+    hours: int = 24,
+    limit: int = 50,
+    topic: str | None = None,
+    source: str | None = None,
+    failures_only: bool = False,
+) -> dict[str, Any]:
+    """Query Scaleway Cockpit (Loki) runtime logs, e.g. Serverless Function stdout/stderr.
+
+    Args:
+        hours: Lookback window in hours.
+        limit: Maximum number of log lines to return.
+        topic: Optional substring line filter (Loki ``|= topic``).
+        source: Optional Scaleway ``resource_name`` (e.g. a function name) to scope to.
+        failures_only: Only return error/exception/5xx-looking lines.
+    """
+    total, entries = ScalewayLogsClient().query_logs(
+        hours=_safe_limit(hours, default=24, maximum=24 * 30),
+        limit=_safe_limit(limit, default=50, maximum=500),
+        topic=topic,
+        source=source,
+        failures_only=failures_only,
+    )
+    return {"total": total, "entries": [entry.__dict__ for entry in entries]}
+
+
+@mcp.tool()
 def bugsink_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
     """Check Bugsink/Sentry configuration and unresolved recent issue activity."""
     return check_bugsink(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
@@ -105,8 +144,32 @@ def bugsink_issues(hours: int = 24, top: int = 10) -> dict[str, Any]:
 
 @mcp.tool()
 def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
-    """Parse an `ojiichan: key=value` code comment into diagnostic fields."""
+    """Parse an `ojiichan: key=value` code comment into diagnostic fields.
+
+    Accepts Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc
+    (`/* ... */`, `*`) comment markers.
+    """
     return parse_annotation(text).to_event_data()
+
+
+@mcp.tool()
+def scaffold_observability(language: str, backend: str = "rustrak") -> dict[str, Any]:
+    """Render observability setup files for a non-Python service.
+
+    Returns the rendered file contents (the agent writes them) so a TypeScript or
+    Rust service can report to the same ELK + Rustrak/Sentry stack as the Python
+    services: Sentry/Rustrak error reporting plus ELK structured events.
+
+    Args:
+        language: Target language, one of "typescript" or "rust".
+        backend: Error-reporting backend referenced in the files
+            (``rustrak`` / ``sentry`` / ``bugsink``); the SDK wiring is identical.
+    """
+    try:
+        files = render_files(language, backend=backend)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc), "languages": list(available_languages())}
+    return {"ok": True, "language": language, "backend": backend, "files": files}
 
 
 @mcp.tool()

@@ -55,6 +55,8 @@ SECRET_MAP: dict[str, str] = {
     "BUGSINK_PROJECT_ID": "bugsink-project-id",
     "SENTRY_AUTH_TOKEN": "sentry-auth-token",
     "SENTRY_BASE_URL": "sentry-base-url",
+    "SCALEWAY_LOKI_URL": "scaleway/loki-url",
+    "SCALEWAY_COCKPIT_TOKEN": "scaleway/cockpit-token",
 }
 
 _lock = Lock()

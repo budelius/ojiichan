@@ -1,0 +1,42 @@
+// ojiichan: scaffolded Scaleway Serverless Function observability wrapper
+//           (backend=__OJIICHAN_BACKEND__)
+//
+// Wrap your Scaleway handler so process crashes are reported to
+// __OJIICHAN_BACKEND__ and buffered events are flushed before the function
+// runtime freezes. Mirrors the `handler-scaleway.ts` step of the family
+// observability standard.
+//
+// Usage (in your function entrypoint):
+//
+//   import { withObservability } from "./handler-scaleway";
+//
+//   async function handle(event: unknown, context: unknown) {
+//     // ...your logic...
+//   }
+//
+//   export { handle as default };
+//   export const handler = withObservability(handle);
+
+import { captureException, flushSentry, initSentry } from "./lib/sentry";
+
+// Initialize once at module load, while the container is warm.
+initSentry();
+
+type ScalewayHandler = (
+  event: unknown,
+  context: unknown,
+) => unknown | Promise<unknown>;
+
+export function withObservability(handler: ScalewayHandler): ScalewayHandler {
+  return async (event, context) => {
+    try {
+      return await handler(event, context);
+    } catch (err) {
+      captureException(err, { runtime: "scaleway" });
+      throw err;
+    } finally {
+      // Always flush — the runtime may freeze the process immediately after.
+      await flushSentry();
+    }
+  };
+}
