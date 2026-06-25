@@ -60,6 +60,17 @@ public func sentryConfig() -> SentryConfig {
     )
 }
 
+// Write transport for structured events. `es` indexes straight into
+// Elasticsearch; `logstash` POSTs the document to a Logstash HTTP input; `otlp`
+// ships an OpenTelemetry LogRecord to an OTLP/HTTP endpoint (usually a
+// Collector) that routes to ELK. The document shape is identical across
+// transports, so events stay queryable together.
+public enum ElkTransport: String {
+    case es
+    case otlp
+    case logstash
+}
+
 public struct ElkConfig {
     public let host: String?
     public let port: Int
@@ -69,10 +80,21 @@ public struct ElkConfig {
     public let verifyCerts: Bool
     public let indexPrefix: String
     public let timeout: TimeInterval
+    public let transport: ElkTransport
+    public let logstashURL: String?
+    public let otlpEndpoint: String?
+    public let otlpHeaders: String?
+}
+
+private func trimTrailingSlash(_ value: String?) -> String? {
+    guard var value = value else { return nil }
+    while value.hasSuffix("/") { value.removeLast() }
+    return value.isEmpty ? nil : value
 }
 
 public func elkConfig() -> ElkConfig {
-    ElkConfig(
+    let transport = ElkTransport(rawValue: (env("ELK_TRANSPORT", default: "es") ?? "es").lowercased()) ?? .es
+    return ElkConfig(
         host: env("ELASTICSEARCH_HOST"),
         port: Int(env("ELASTICSEARCH_PORT", default: "443") ?? "443") ?? 443,
         username: env("ELASTICSEARCH_USERNAME"),
@@ -80,7 +102,12 @@ public func elkConfig() -> ElkConfig {
         useSsl: envBool("ELASTICSEARCH_USE_SSL", default: true),
         verifyCerts: envBool("ELASTICSEARCH_VERIFY_CERTS", default: true),
         indexPrefix: env("ELASTICSEARCH_INDEX_PREFIX", default: "app") ?? "app",
-        timeout: Double(env("ELASTICSEARCH_TIMEOUT", default: "10") ?? "10") ?? 10
+        timeout: Double(env("ELASTICSEARCH_TIMEOUT", default: "10") ?? "10") ?? 10,
+        transport: transport,
+        logstashURL: trimTrailingSlash(env("LOGSTASH_URL")),
+        // Standard OpenTelemetry env vars (the `OJIICHAN_`-prefixed override still wins).
+        otlpEndpoint: trimTrailingSlash(env("OTEL_EXPORTER_OTLP_ENDPOINT")),
+        otlpHeaders: env("OTEL_EXPORTER_OTLP_HEADERS")
     )
 }
 
@@ -91,4 +118,14 @@ public func elkBaseURL(_ cfg: ElkConfig = elkConfig()) -> String? {
     if host.hasPrefix("http://") || host.hasPrefix("https://") { return host }
     let scheme = cfg.useSsl ? "https" : "http"
     return "\(scheme)://\(host):\(cfg.port)"
+}
+
+// Resolve the sink URL for the active write transport; `nil` means the
+// transport is unconfigured, so callers fall back to console logging.
+public func elkWriteTarget(_ cfg: ElkConfig = elkConfig()) -> String? {
+    switch cfg.transport {
+    case .logstash: return cfg.logstashURL
+    case .otlp: return cfg.otlpEndpoint
+    case .es: return elkBaseURL(cfg)
+    }
 }

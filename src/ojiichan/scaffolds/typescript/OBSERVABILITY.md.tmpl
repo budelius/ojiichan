@@ -60,10 +60,30 @@ before the runtime freezes — see `src/handler-scaleway.ts`.
 | `SERVICE_NAME` / `APP_NAME` | Logical service name. |
 | `ELASTICSEARCH_HOST` | ELK host (with or without scheme). Unset ⇒ ELK no-ops. |
 | `ELASTICSEARCH_PORT` | Defaults to `443`. |
-| `ELASTICSEARCH_USERNAME` / `ELASTICSEARCH_PASSWORD` | Basic auth. |
+| `ELASTICSEARCH_USERNAME` / `ELASTICSEARCH_PASSWORD` | Basic auth (also used for Logstash). |
 | `ELASTICSEARCH_INDEX_PREFIX` | Index prefix; defaults to `app`. |
+| `ELK_TRANSPORT` | Write transport: `es` (default), `logstash`, or `otlp`. |
+| `LOGSTASH_URL` | Logstash HTTP input URL (`logstash` transport). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP/HTTP base URL, e.g. a Collector (`otlp` transport). |
+| `OTEL_EXPORTER_OTLP_HEADERS` | OTLP headers, `key=value` comma-separated (e.g. auth). |
 
 > **Self-signed ELK certs:** the global `fetch` validates TLS. For a self-signed
 > cluster, run the service with a custom `undici` `Agent` (or, as a last resort,
 > `NODE_TLS_REJECT_UNAUTHORIZED=0`) — `ELASTICSEARCH_VERIFY_CERTS=false` documents
 > intent but `fetch` does not read it.
+
+## Write transports
+
+`logEvent` builds one canonical document and ships it through the transport
+selected by `ELK_TRANSPORT`. The document shape is identical across transports,
+so events stay queryable together regardless of how they were written.
+
+| Transport | Sink | Notes |
+| --- | --- | --- |
+| `es` (default) | `POST <host>/<prefix>-<topic>/_doc` | Direct to Elasticsearch. |
+| `logstash` | `POST $LOGSTASH_URL` | Document sent with an extra `index` field; route it in your pipeline with `elasticsearch { index => "%{index}" }`. |
+| `otlp` | `POST $OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs` | OpenTelemetry LogRecord (JSON); point at a Collector that exports to ELK. |
+
+> **Reads stay on Elasticsearch.** Transports only affect the *write* path.
+> Querying logs / health checks read from Elasticsearch no matter which transport
+> wrote the events.

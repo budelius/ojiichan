@@ -1,7 +1,17 @@
 """Ojiichan diagnostics toolkit."""
 
 from .bugsink import BugsinkClient, BugsinkIssue, check_bugsink
-from .dsl import DiagnosticHint, diagnostic, get_diagnostic, hint, parse_annotation
+from .dsl import (
+    DiagnosticDoc,
+    DiagnosticHint,
+    diagnostic,
+    get_diagnostic,
+    hint,
+    is_doc_annotation,
+    parse_annotation,
+    parse_any,
+    parse_doc,
+)
 from .elk import ElkClient, check_elk, query_elk_logs
 from .rustrak import RustrakClient, RustrakIssue, check_rustrak
 from .scaffold import ScaffoldResult, available_languages, render_files, scaffold
@@ -11,6 +21,7 @@ from .sentry import SentryApiClient, capture_exception, init_sentry
 __all__ = [
     "BugsinkClient",
     "BugsinkIssue",
+    "DiagnosticDoc",
     "DiagnosticHint",
     "ElkClient",
     "RustrakClient",
@@ -29,7 +40,10 @@ __all__ = [
     "get_diagnostic",
     "hint",
     "init_sentry",
+    "is_doc_annotation",
     "parse_annotation",
+    "parse_any",
+    "parse_doc",
     "query_elk_logs",
     "query_scaleway_logs",
     "render_files",

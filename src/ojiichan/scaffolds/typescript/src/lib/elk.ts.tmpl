@@ -1,13 +1,15 @@
 // ojiichan: scaffolded ELK structured event logging (backend=__OJIICHAN_BACKEND__)
 //
-// Posts one structured document per event to Elasticsearch, matching the index
-// naming and document shape produced by ojiichan's Python `ElkClient.log_event`
-// (`<index_prefix>-<topic>` / `_doc`). Falls back to console logging when ELK is
-// unconfigured or the request fails, so the diagnostics path never throws.
+// Posts one structured document per event, matching the index naming and
+// document shape produced by ojiichan's Python `ElkClient.log_event`
+// (`<index_prefix>-<topic>` / `_doc`). The sink is chosen by `ELK_TRANSPORT`
+// (`es` | `logstash` | `otlp`) — see `elkWriteTarget`. Falls back to console
+// logging when the transport is unconfigured or the request fails, so the
+// diagnostics path never throws.
 //
 // Uses the global `fetch` (Node 18+); no Elasticsearch client dependency.
 
-import { elkBaseUrl, elkConfig, env } from "./config";
+import { ElkConfig, elkConfig, elkWriteTarget, env } from "./config";
 
 const SERVICE = env("SERVICE_NAME") ?? env("APP_NAME") ?? "app";
 
@@ -26,7 +28,7 @@ export async function logEvent(
   opts: LogEventOptions = {},
 ): Promise<boolean> {
   const cfg = elkConfig();
-  const baseUrl = elkBaseUrl(cfg);
+  const level = opts.level ?? "info";
 
   const payload: Record<string, unknown> = { ...data };
   for (const key of opts.redactKeys ?? []) delete payload[key];
@@ -35,7 +37,7 @@ export async function logEvent(
     "@timestamp": new Date().toISOString(),
     event_type: eventType,
     operation: (payload.operation as string | undefined) ?? eventType,
-    level: opts.level ?? "info",
+    level,
     service: SERVICE,
     ...payload,
   };
@@ -45,27 +47,140 @@ export async function logEvent(
   const index = `${cfg.indexPrefix}-${opts.topic ?? eventType}`;
   const log = opts.failure ? console.error : console.log;
 
-  if (!baseUrl) {
+  const target = elkWriteTarget(cfg);
+  if (!target) {
     log(`[ELK:${index}]`, document);
     return false;
   }
 
+  try {
+    if (cfg.transport === "logstash") {
+      return await sendLogstash(cfg, target, index, document);
+    }
+    if (cfg.transport === "otlp") {
+      return await sendOtlp(cfg, target, document, level);
+    }
+    return await sendElasticsearch(cfg, target, index, document);
+  } catch (err) {
+    log(`[ELK:${index}]`, document, err);
+    return false;
+  }
+}
+
+function basicAuthHeaders(cfg: ElkConfig): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (cfg.username && cfg.password) {
     const token = Buffer.from(`${cfg.username}:${cfg.password}`).toString("base64");
     headers.Authorization = `Basic ${token}`;
   }
+  return headers;
+}
 
-  try {
-    const res = await fetch(`${baseUrl}/${index}/_doc`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(document),
-      signal: AbortSignal.timeout(cfg.timeoutMs),
-    });
-    return res.ok;
-  } catch (err) {
-    log(`[ELK:${index}]`, document, err);
-    return false;
+async function sendElasticsearch(
+  cfg: ElkConfig,
+  baseUrl: string,
+  index: string,
+  document: Record<string, unknown>,
+): Promise<boolean> {
+  const res = await fetch(`${baseUrl}/${index}/_doc`, {
+    method: "POST",
+    headers: basicAuthHeaders(cfg),
+    body: JSON.stringify(document),
+    signal: AbortSignal.timeout(cfg.timeoutMs),
+  });
+  return res.ok;
+}
+
+// POST to a Logstash HTTP input. The index travels as a field so a Logstash
+// pipeline can route to the same `<prefix>-<topic>` index the `es` transport
+// writes to directly (e.g. `elasticsearch { index => "%{index}" }`).
+async function sendLogstash(
+  cfg: ElkConfig,
+  url: string,
+  index: string,
+  document: Record<string, unknown>,
+): Promise<boolean> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: basicAuthHeaders(cfg),
+    body: JSON.stringify({ ...document, index }),
+    signal: AbortSignal.timeout(cfg.timeoutMs),
+  });
+  return res.ok;
+}
+
+// Map a textual level to an OTLP SeverityNumber.
+// https://opentelemetry.io/docs/specs/otel/logs/data-model/#severity-fields
+const OTLP_SEVERITY: Record<string, number> = {
+  trace: 1, debug: 5, info: 9, warn: 13, warning: 13, error: 17, fatal: 21, critical: 21,
+};
+
+function otlpAnyValue(value: unknown): Record<string, unknown> {
+  if (typeof value === "boolean") return { boolValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? { intValue: String(value) } : { doubleValue: value };
   }
+  if (value && typeof value === "object") return { stringValue: JSON.stringify(value) };
+  return { stringValue: String(value) };
+}
+
+// Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
+// `key=value` pairs, e.g. `authorization=Bearer xyz,x-tenant=acme`.
+function parseOtlpHeaders(raw?: string): Record<string, string> {
+  const headers: Record<string, string> = {};
+  for (const pair of (raw ?? "").split(",")) {
+    const trimmed = pair.trim();
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    headers[trimmed.slice(0, eq).trim()] = trimmed.slice(eq + 1).trim();
+  }
+  return headers;
+}
+
+// Ship the event as an OTLP/HTTP JSON LogRecord to `<endpoint>/v1/logs`.
+async function sendOtlp(
+  cfg: ElkConfig,
+  endpoint: string,
+  document: Record<string, unknown>,
+  level: string,
+): Promise<boolean> {
+  const url = endpoint.endsWith("/v1/logs") ? endpoint : `${endpoint}/v1/logs`;
+  const ts = document["@timestamp"];
+  const timeUnixNano =
+    typeof ts === "string" ? String(Date.parse(ts) * 1_000_000) : "0";
+  const attributes = Object.entries(document)
+    .filter(([key]) => key !== "@timestamp")
+    .map(([key, value]) => ({ key, value: otlpAnyValue(value) }));
+  const body = {
+    resourceLogs: [
+      {
+        resource: {
+          attributes: [
+            { key: "service.name", value: { stringValue: String(document.service ?? "app") } },
+          ],
+        },
+        scopeLogs: [
+          {
+            scope: { name: "ojiichan" },
+            logRecords: [
+              {
+                timeUnixNano,
+                severityNumber: OTLP_SEVERITY[level.toLowerCase()] ?? 9,
+                severityText: level.toUpperCase(),
+                body: { stringValue: String(document.message ?? document.event_type ?? "") },
+                attributes,
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...parseOtlpHeaders(cfg.otlpHeaders) },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(cfg.timeoutMs),
+  });
+  return res.ok;
 }

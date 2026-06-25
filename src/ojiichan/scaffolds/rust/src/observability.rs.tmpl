@@ -81,12 +81,32 @@ fn elk_base_url() -> Option<String> {
     Some(format!("{scheme}://{host}:{port}"))
 }
 
+/// Write transport for structured events: `es` (default), `logstash`, or `otlp`.
+/// Unknown values fall back to `es`. The document shape is identical across
+/// transports, so events stay queryable together.
+fn elk_transport() -> String {
+    let value = env_var("ELK_TRANSPORT")
+        .unwrap_or_else(|| "es".to_string())
+        .to_lowercase();
+    match value.as_str() {
+        "logstash" | "otlp" => value,
+        _ => "es".to_string(),
+    }
+}
+
+fn http_timeout() -> std::time::Duration {
+    let secs = env_var("ELASTICSEARCH_TIMEOUT")
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(10.0);
+    std::time::Duration::from_secs_f64(secs)
+}
+
 /// Ship one structured event to ELK, matching the index naming and document
 /// shape of ojiichan's Python `ElkClient.log_event`
-/// (`<index_prefix>-<topic>` / `_doc`).
+/// (`<index_prefix>-<topic>` / `_doc`). The sink is chosen by `ELK_TRANSPORT`.
 ///
-/// Returns `false` (and logs to stderr) when ELK is unconfigured or the request
-/// fails — the diagnostics path never panics.
+/// Returns `false` (and logs to stderr) when the transport is unconfigured or
+/// the request fails — the diagnostics path never panics.
 pub fn log_event(
     event_type: &str,
     data: serde_json::Value,
@@ -117,30 +137,175 @@ pub fn log_event(
     let index = format!("{prefix}-{}", topic.unwrap_or(event_type));
     let document = serde_json::Value::Object(document);
 
+    match elk_transport().as_str() {
+        "logstash" => send_logstash(&index, &document),
+        "otlp" => send_otlp(&document, level),
+        _ => send_elasticsearch(&index, &document),
+    }
+}
+
+fn send_elasticsearch(index: &str, document: &serde_json::Value) -> bool {
     let Some(base) = elk_base_url() else {
         eprintln!("[ELK:{index}] {document}");
         return false;
     };
-
-    let timeout = env_var("ELASTICSEARCH_TIMEOUT")
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(10.0);
     let client = reqwest::blocking::Client::new();
     let mut request = client
         .post(format!("{base}/{index}/_doc"))
-        .timeout(std::time::Duration::from_secs_f64(timeout))
-        .json(&document);
+        .timeout(http_timeout())
+        .json(document);
     if let (Some(user), Some(password)) = (
         env_var("ELASTICSEARCH_USERNAME"),
         env_var("ELASTICSEARCH_PASSWORD"),
     ) {
         request = request.basic_auth(user, Some(password));
     }
-
     match request.send() {
         Ok(response) => response.status().is_success(),
         Err(err) => {
             eprintln!("[ELK:{index}] send failed: {err}");
+            false
+        }
+    }
+}
+
+/// POST the document to a Logstash HTTP input. The index travels as an `index`
+/// field so a Logstash pipeline can route to the same `<prefix>-<topic>` index
+/// the `es` transport writes to directly.
+fn send_logstash(index: &str, document: &serde_json::Value) -> bool {
+    let Some(url) = env_var("LOGSTASH_URL").map(|u| u.trim_end_matches('/').to_string()) else {
+        eprintln!("[ELK:{index}] {document}");
+        return false;
+    };
+    let mut payload = document.clone();
+    if let serde_json::Value::Object(map) = &mut payload {
+        map.insert("index".into(), index.into());
+    }
+    let client = reqwest::blocking::Client::new();
+    let mut request = client.post(&url).timeout(http_timeout()).json(&payload);
+    if let (Some(user), Some(password)) = (
+        env_var("ELASTICSEARCH_USERNAME"),
+        env_var("ELASTICSEARCH_PASSWORD"),
+    ) {
+        request = request.basic_auth(user, Some(password));
+    }
+    match request.send() {
+        Ok(response) => response.status().is_success(),
+        Err(err) => {
+            eprintln!("[ELK:{index}] send failed: {err}");
+            false
+        }
+    }
+}
+
+/// Map a textual level to an OTLP SeverityNumber.
+/// <https://opentelemetry.io/docs/specs/otel/logs/data-model/#severity-fields>
+fn otlp_severity_number(level: &str) -> i32 {
+    match level.to_lowercase().as_str() {
+        "trace" => 1,
+        "debug" => 5,
+        "warn" | "warning" => 13,
+        "error" => 17,
+        "fatal" | "critical" => 21,
+        _ => 9,
+    }
+}
+
+fn otlp_any_value(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Bool(b) => serde_json::json!({ "boolValue": b }),
+        serde_json::Value::Number(n) if n.is_i64() || n.is_u64() => {
+            serde_json::json!({ "intValue": n.to_string() })
+        }
+        serde_json::Value::Number(n) => serde_json::json!({ "doubleValue": n.as_f64() }),
+        serde_json::Value::String(s) => serde_json::json!({ "stringValue": s }),
+        other => serde_json::json!({ "stringValue": other.to_string() }),
+    }
+}
+
+/// Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
+/// `key=value` pairs, e.g. `authorization=Bearer xyz,x-tenant=acme`.
+fn parse_otlp_headers(raw: &str) -> Vec<(String, String)> {
+    raw.split(',')
+        .filter_map(|pair| {
+            let pair = pair.trim();
+            pair.split_once('=')
+                .map(|(k, v)| (k.trim().to_string(), v.trim().to_string()))
+        })
+        .collect()
+}
+
+/// Ship the event as an OTLP/HTTP JSON LogRecord to `<endpoint>/v1/logs`.
+fn send_otlp(document: &serde_json::Value, level: &str) -> bool {
+    let Some(endpoint) = env_var("OTEL_EXPORTER_OTLP_ENDPOINT")
+        .map(|e| e.trim_end_matches('/').to_string())
+    else {
+        eprintln!("[OTLP] {document}");
+        return false;
+    };
+    let url = if endpoint.ends_with("/v1/logs") {
+        endpoint
+    } else {
+        format!("{endpoint}/v1/logs")
+    };
+
+    let obj = document.as_object().cloned().unwrap_or_default();
+    let time_unix_nano = obj
+        .get("@timestamp")
+        .and_then(|v| v.as_str())
+        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.timestamp_nanos_opt().unwrap_or(0).to_string())
+        .unwrap_or_else(|| "0".to_string());
+    let service_name = obj
+        .get("service")
+        .and_then(|v| v.as_str())
+        .unwrap_or("app")
+        .to_string();
+    let body_text = obj
+        .get("message")
+        .or_else(|| obj.get("event_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let attributes: Vec<serde_json::Value> = obj
+        .iter()
+        .filter(|(key, _)| key.as_str() != "@timestamp")
+        .map(|(key, value)| serde_json::json!({ "key": key, "value": otlp_any_value(value) }))
+        .collect();
+
+    let payload = serde_json::json!({
+        "resourceLogs": [{
+            "resource": {
+                "attributes": [{
+                    "key": "service.name",
+                    "value": { "stringValue": service_name }
+                }]
+            },
+            "scopeLogs": [{
+                "scope": { "name": "ojiichan" },
+                "logRecords": [{
+                    "timeUnixNano": time_unix_nano,
+                    "severityNumber": otlp_severity_number(level),
+                    "severityText": level.to_uppercase(),
+                    "body": { "stringValue": body_text },
+                    "attributes": attributes
+                }]
+            }]
+        }]
+    });
+
+    let client = reqwest::blocking::Client::new();
+    let mut request = client.post(&url).timeout(http_timeout()).json(&payload);
+    for (key, value) in env_var("OTEL_EXPORTER_OTLP_HEADERS")
+        .map(|raw| parse_otlp_headers(&raw))
+        .unwrap_or_default()
+    {
+        request = request.header(key, value);
+    }
+    match request.send() {
+        Ok(response) => response.status().is_success(),
+        Err(err) => {
+            eprintln!("[OTLP] send failed: {err}");
             false
         }
     }

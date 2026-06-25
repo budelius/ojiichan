@@ -1,4 +1,4 @@
-"""Reusable Elasticsearch/ELK diagnostics and structured logging."""
+"""Reusable OpenSearch/ELK diagnostics and structured logging."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ class ElkLogEntry:
 
 
 class ElkClient:
-    """Small wrapper around Elasticsearch for app diagnostics."""
+    """Small wrapper around OpenSearch for app diagnostics."""
 
     def __init__(self, config: ElkConfig | None = None, *, service: str | None = None) -> None:
         self.config = config or ElkConfig.from_env()
@@ -38,16 +38,16 @@ class ElkClient:
             return self._client
         if not self.config.url:
             raise RuntimeError("ELASTICSEARCH_HOST is not set")
-        from elasticsearch import Elasticsearch
+        from opensearchpy import OpenSearch
 
-        self._client = Elasticsearch(
+        self._client = OpenSearch(
             hosts=[self.config.url],
-            basic_auth=(self.config.username, self.config.password)
+            http_auth=(self.config.username, self.config.password)
             if self.config.username and self.config.password
             else None,
             verify_certs=self.config.verify_certs,
             ssl_show_warn=False,
-            request_timeout=self.config.timeout,
+            timeout=self.config.timeout,
         )
         self._client.info()
         return self._client
@@ -91,10 +91,11 @@ class ElkClient:
 
         index = self.index_name(topic or event_type)
         try:
-            result = self.connect().index(index=index, document=document)
-            return result.get("result") in {"created", "updated"}
+            return self._ship(index, document, level=level)
         except Exception as exc:
-            logger.warning("Failed to log to Elasticsearch: %s", exc, exc_info=True)
+            logger.warning(
+                "Failed to log via %s transport: %s", self.config.transport, exc, exc_info=True
+            )
             logger.log(
                 getattr(logging, level.upper(), logging.INFO),
                 "[ELK:%s] %s",
@@ -102,6 +103,32 @@ class ElkClient:
                 document,
             )
             return False
+
+    def _ship(self, index: str, document: dict[str, Any], *, level: str) -> bool:
+        """Dispatch one built document to the configured write transport.
+
+        ``logstash`` and ``otlp`` are HTTP sinks; ``es`` (the default) indexes
+        straight into OpenSearch. Unconfigured transports fall back to stdlib
+        logging so the diagnostics path never throws.
+        """
+        transport = self.config.transport
+        if transport in {"logstash", "otlp"}:
+            if not self.config.write_target:
+                logger.log(
+                    getattr(logging, level.upper(), logging.INFO),
+                    "[ELK:%s] %s",
+                    index,
+                    document,
+                )
+                return False
+            from .transports import send_logstash, send_otlp
+
+            if transport == "logstash":
+                return send_logstash(self.config, index, document)
+            return send_otlp(self.config, document, level=level)
+
+        result = self.connect().index(index=index, body=document)
+        return result.get("result") in {"created", "updated"}
 
     def query_logs(
         self,
@@ -120,9 +147,11 @@ class ElkClient:
         index = f"{self.config.index_prefix}-{topic}*" if topic else f"{self.config.index_prefix}-*"
         response = self.connect().search(
             index=index,
-            size=limit,
-            query={"bool": {"must": must}},
-            sort=[{"@timestamp": "desc"}],
+            body={
+                "size": limit,
+                "query": {"bool": {"must": must}},
+                "sort": [{"@timestamp": "desc"}],
+            },
         )
         total = response.get("hits", {}).get("total", {})
         total_value = total.get("value") if isinstance(total, dict) else None
@@ -161,14 +190,16 @@ def check_elk(
     try:
         es = client.connect()
         out["cluster"] = es.info().get("cluster_name")
-        out["events_total"] = es.count(index=index, query={"bool": {"must": [since]}})["count"]
+        out["events_total"] = es.count(index=index, body={"query": {"bool": {"must": [since]}}})[
+            "count"
+        ]
     except Exception as exc:
         return {**out, "status": "fail", "error": f"ES query failed: {exc}"}
 
     try:
         failures = es.count(
             index=index,
-            query={"bool": {"must": [since, {"term": {"failure": True}}]}},
+            body={"query": {"bool": {"must": [since, {"term": {"failure": True}}]}}},
         )["count"]
     except Exception:
         failures = 0
@@ -177,16 +208,18 @@ def check_elk(
     try:
         agg = es.search(
             index=index,
-            size=0,
-            query={"bool": {"must": [since, {"term": {"failure": True}}]}},
-            aggs={
-                "by_op": {
-                    "terms": {
-                        "field": "operation.keyword",
-                        "size": top_n,
-                        "missing": "(unknown)",
+            body={
+                "size": 0,
+                "query": {"bool": {"must": [since, {"term": {"failure": True}}]}},
+                "aggs": {
+                    "by_op": {
+                        "terms": {
+                            "field": "operation.keyword",
+                            "size": top_n,
+                            "missing": "(unknown)",
+                        }
                     }
-                }
+                },
             },
         )
         buckets = agg.get("aggregations", {}).get("by_op", {}).get("buckets", [])

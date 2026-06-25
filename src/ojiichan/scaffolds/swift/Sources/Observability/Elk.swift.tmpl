@@ -1,9 +1,11 @@
 // ojiichan: scaffolded ELK structured event logging (backend=__OJIICHAN_BACKEND__)
 //
-// Posts one structured document per event to Elasticsearch, matching the index
-// naming and document shape produced by ojiichan's Python `ElkClient.log_event`
-// (`<index_prefix>-<topic>` / `_doc`). Falls back to console logging when ELK is
-// unconfigured or the request fails, so the diagnostics path never throws.
+// Posts one structured document per event, matching the index naming and
+// document shape produced by ojiichan's Python `ElkClient.log_event`
+// (`<index_prefix>-<topic>` / `_doc`). The sink is chosen by `ELK_TRANSPORT`
+// (`es` | `logstash` | `otlp`) — see `elkWriteTarget`. Falls back to console
+// logging when the transport is unconfigured or the request fails, so the
+// diagnostics path never throws.
 //
 // Uses `URLSession` from Foundation; no Elasticsearch client dependency.
 
@@ -64,28 +66,38 @@ public func logEvent(
         )
     }
 
-    guard let base = elkBaseURL(cfg) else {
+    guard elkWriteTarget(cfg) != nil else {
         logLocally()
         return false
     }
 
-    guard
-        let url = URL(string: "\(base)/\(index)/_doc"),
-        let body = try? JSONSerialization.data(withJSONObject: document)
-    else {
-        logLocally(" (failed to encode document)")
-        return false
+    switch cfg.transport {
+    case .logstash:
+        return await sendLogstash(cfg, index: index, document: document, logLocally: logLocally)
+    case .otlp:
+        return await sendOtlp(cfg, document: document, level: options.level, logLocally: logLocally)
+    case .es:
+        return await sendElasticsearch(cfg, index: index, document: document, logLocally: logLocally)
     }
+}
 
+private func basicAuthValue(_ cfg: ElkConfig) -> String? {
+    guard let user = cfg.username, let password = cfg.password else { return nil }
+    return "Basic \(Data("\(user):\(password)".utf8).base64EncodedString())"
+}
+
+private func sendJSON(
+    _ url: URL,
+    body: Data,
+    cfg: ElkConfig,
+    headers: [String: String],
+    logLocally: (String) -> Void
+) async -> Bool {
     var request = URLRequest(url: url, timeoutInterval: cfg.timeout)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
     request.httpBody = body
-    if let user = cfg.username, let password = cfg.password {
-        let token = Data("\(user):\(password)".utf8).base64EncodedString()
-        request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
-    }
-
     do {
         let (_, response) = try await URLSession.shared.data(for: request)
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -94,4 +106,132 @@ public func logEvent(
         logLocally(" send failed: \(error)")
         return false
     }
+}
+
+private func sendElasticsearch(
+    _ cfg: ElkConfig,
+    index: String,
+    document: [String: Any],
+    logLocally: (String) -> Void
+) async -> Bool {
+    guard let base = elkBaseURL(cfg) else { logLocally(""); return false }
+    guard
+        let url = URL(string: "\(base)/\(index)/_doc"),
+        let body = try? JSONSerialization.data(withJSONObject: document)
+    else {
+        logLocally(" (failed to encode document)")
+        return false
+    }
+    var headers: [String: String] = [:]
+    if let auth = basicAuthValue(cfg) { headers["Authorization"] = auth }
+    return await sendJSON(url, body: body, cfg: cfg, headers: headers, logLocally: logLocally)
+}
+
+// POST the document to a Logstash HTTP input. The index travels as an `index`
+// field so a Logstash pipeline can route to the same `<prefix>-<topic>` index
+// the `es` transport writes to directly.
+private func sendLogstash(
+    _ cfg: ElkConfig,
+    index: String,
+    document: [String: Any],
+    logLocally: (String) -> Void
+) async -> Bool {
+    guard let urlString = cfg.logstashURL, let url = URL(string: urlString) else {
+        logLocally("")
+        return false
+    }
+    var payload = document
+    payload["index"] = index
+    guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+        logLocally(" (failed to encode document)")
+        return false
+    }
+    var headers: [String: String] = [:]
+    if let auth = basicAuthValue(cfg) { headers["Authorization"] = auth }
+    return await sendJSON(url, body: body, cfg: cfg, headers: headers, logLocally: logLocally)
+}
+
+// Map a textual level to an OTLP SeverityNumber.
+// https://opentelemetry.io/docs/specs/otel/logs/data-model/#severity-fields
+private func otlpSeverityNumber(_ level: String) -> Int {
+    switch level.lowercased() {
+    case "trace": return 1
+    case "debug": return 5
+    case "warn", "warning": return 13
+    case "error": return 17
+    case "fatal", "critical": return 21
+    default: return 9
+    }
+}
+
+private func otlpAnyValue(_ value: Any) -> [String: Any] {
+    switch value {
+    case let b as Bool: return ["boolValue": b]
+    case let i as Int: return ["intValue": String(i)]
+    case let d as Double: return ["doubleValue": d]
+    case let s as String: return ["stringValue": s]
+    default: return ["stringValue": "\(value)"]
+    }
+}
+
+// Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
+// `key=value` pairs, e.g. `authorization=Bearer xyz,x-tenant=acme`.
+private func parseOtlpHeaders(_ raw: String?) -> [String: String] {
+    var headers: [String: String] = [:]
+    for pair in (raw ?? "").split(separator: ",") {
+        let parts = pair.split(separator: "=", maxSplits: 1)
+        guard parts.count == 2 else { continue }
+        headers[parts[0].trimmingCharacters(in: .whitespaces)] =
+            parts[1].trimmingCharacters(in: .whitespaces)
+    }
+    return headers
+}
+
+// Ship the event as an OTLP/HTTP JSON LogRecord to `<endpoint>/v1/logs`.
+private func sendOtlp(
+    _ cfg: ElkConfig,
+    document: [String: Any],
+    level: String,
+    logLocally: (String) -> Void
+) async -> Bool {
+    guard let endpoint = cfg.otlpEndpoint else { logLocally(""); return false }
+    let urlString = endpoint.hasSuffix("/v1/logs") ? endpoint : "\(endpoint)/v1/logs"
+    guard let url = URL(string: urlString) else { logLocally(""); return false }
+
+    var timeUnixNano = "0"
+    if let ts = document["@timestamp"] as? String,
+        let date = ISO8601DateFormatter().date(from: ts) {
+        timeUnixNano = String(Int(date.timeIntervalSince1970 * 1_000_000_000))
+    }
+    let attributes: [[String: Any]] = document
+        .filter { $0.key != "@timestamp" }
+        .map { ["key": $0.key, "value": otlpAnyValue($0.value)] }
+    let bodyText = (document["message"] as? String) ?? (document["event_type"] as? String) ?? ""
+    let payload: [String: Any] = [
+        "resourceLogs": [[
+            "resource": [
+                "attributes": [[
+                    "key": "service.name",
+                    "value": ["stringValue": (document["service"] as? String) ?? "app"],
+                ]]
+            ],
+            "scopeLogs": [[
+                "scope": ["name": "ojiichan"],
+                "logRecords": [[
+                    "timeUnixNano": timeUnixNano,
+                    "severityNumber": otlpSeverityNumber(level),
+                    "severityText": level.uppercased(),
+                    "body": ["stringValue": bodyText],
+                    "attributes": attributes,
+                ]],
+            ]],
+        ]]
+    ]
+    guard let body = try? JSONSerialization.data(withJSONObject: payload) else {
+        logLocally(" (failed to encode OTLP payload)")
+        return false
+    }
+    return await sendJSON(
+        url, body: body, cfg: cfg, headers: parseOtlpHeaders(cfg.otlpHeaders), logLocally: logLocally
+    )
 }

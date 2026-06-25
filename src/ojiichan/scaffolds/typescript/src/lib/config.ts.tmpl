@@ -33,6 +33,14 @@ export function sentryConfig(): SentryConfig {
   };
 }
 
+// Write transport for structured events. `es` indexes straight into
+// Elasticsearch; `logstash` POSTs the document to a Logstash HTTP input; `otlp`
+// ships an OpenTelemetry LogRecord to an OTLP/HTTP endpoint (usually a
+// Collector) that routes to ELK. The document shape is identical across
+// transports, so events stay queryable together.
+export type ElkTransport = "es" | "otlp" | "logstash";
+const ELK_TRANSPORTS: ElkTransport[] = ["es", "otlp", "logstash"];
+
 export interface ElkConfig {
   host?: string;
   port: number;
@@ -42,9 +50,17 @@ export interface ElkConfig {
   verifyCerts: boolean;
   indexPrefix: string;
   timeoutMs: number;
+  transport: ElkTransport;
+  logstashUrl?: string;
+  otlpEndpoint?: string;
+  otlpHeaders?: string;
 }
 
 export function elkConfig(): ElkConfig {
+  const requested = (env("ELK_TRANSPORT", "es") ?? "es").toLowerCase();
+  const transport = (ELK_TRANSPORTS as string[]).includes(requested)
+    ? (requested as ElkTransport)
+    : "es";
   return {
     host: env("ELASTICSEARCH_HOST"),
     port: Number(env("ELASTICSEARCH_PORT", "443")),
@@ -54,6 +70,11 @@ export function elkConfig(): ElkConfig {
     verifyCerts: envBool("ELASTICSEARCH_VERIFY_CERTS", true),
     indexPrefix: env("ELASTICSEARCH_INDEX_PREFIX", "app") ?? "app",
     timeoutMs: Number(env("ELASTICSEARCH_TIMEOUT", "10")) * 1000,
+    transport,
+    logstashUrl: env("LOGSTASH_URL")?.replace(/\/+$/, ""),
+    // Standard OpenTelemetry env vars (the `OJIICHAN_`-prefixed override still wins).
+    otlpEndpoint: env("OTEL_EXPORTER_OTLP_ENDPOINT")?.replace(/\/+$/, ""),
+    otlpHeaders: env("OTEL_EXPORTER_OTLP_HEADERS"),
   };
 }
 
@@ -66,4 +87,12 @@ export function elkBaseUrl(cfg: ElkConfig = elkConfig()): string | undefined {
   }
   const scheme = cfg.useSsl ? "https" : "http";
   return `${scheme}://${cfg.host}:${cfg.port}`;
+}
+
+// Resolve the sink URL for the active write transport; `undefined` means the
+// transport is unconfigured, so callers fall back to console logging.
+export function elkWriteTarget(cfg: ElkConfig = elkConfig()): string | undefined {
+  if (cfg.transport === "logstash") return cfg.logstashUrl;
+  if (cfg.transport === "otlp") return cfg.otlpEndpoint;
+  return elkBaseUrl(cfg);
 }

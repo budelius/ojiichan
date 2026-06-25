@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
-from ojiichan.dsl import parse_annotation
+from ojiichan.dsl import DiagnosticDoc, parse_any
 from ojiichan.elk import ElkClient, check_elk
 from ojiichan.rustrak import RustrakClient, check_rustrak
 from ojiichan.scaffold import available_languages, render_files
@@ -144,12 +144,25 @@ def bugsink_issues(hours: int = 24, top: int = 10) -> dict[str, Any]:
 
 @mcp.tool()
 def parse_diagnostic_annotation(text: str) -> dict[str, Any]:
-    """Parse an `ojiichan: key=value` code comment into diagnostic fields.
+    """Parse an ojiichan diagnostic code comment into structured fields.
 
-    Accepts Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc
-    (`/* ... */`, `*`) comment markers.
+    Handles both DSL forms: the compact `ojiichan: key=value` line and the
+    extended `ojiichan:doc` markdown block (summary, `## errors`, `## checks`).
+    For a doc block the response includes the parsed `errors`/`checks` lists and
+    an agent-facing `markdown` render. Accepts Python/shell (`#`), C/Rust/TS
+    (`//`, `///`, `//!`), and block/JSDoc (`/* ... */`, `*`) comment markers.
     """
-    return parse_annotation(text).to_event_data()
+    parsed = parse_any(text)
+    if isinstance(parsed, DiagnosticDoc):
+        return {
+            "kind": "doc",
+            "fields": parsed.to_event_data(),
+            "summary": parsed.summary,
+            "errors": list(parsed.errors),
+            "checks": list(parsed.checks),
+            "markdown": parsed.to_markdown(),
+        }
+    return {"kind": "hint", "fields": parsed.to_event_data()}
 
 
 @mcp.tool()

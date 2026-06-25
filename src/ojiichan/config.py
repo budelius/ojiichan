@@ -21,6 +21,9 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+ELK_TRANSPORTS = ("es", "otlp", "logstash")
+
+
 @dataclass(frozen=True)
 class ElkConfig:
     host: str | None
@@ -31,9 +34,22 @@ class ElkConfig:
     verify_certs: bool = True
     index_prefix: str = "app"
     timeout: float = 10
+    # Write transport for structured events. ``es`` indexes straight into
+    # Elasticsearch; ``logstash`` POSTs the document to a Logstash HTTP input;
+    # ``otlp`` ships an OpenTelemetry LogRecord to an OTLP/HTTP endpoint (usually
+    # an OpenTelemetry Collector) which then routes to ELK. The document shape is
+    # identical across transports, so events stay queryable together. Reads
+    # (``health``/``logs``) always go to Elasticsearch regardless of transport.
+    transport: str = "es"
+    logstash_url: str | None = None
+    otlp_endpoint: str | None = None
+    otlp_headers: str | None = None
 
     @classmethod
     def from_env(cls) -> ElkConfig:
+        transport = (env("ELK_TRANSPORT", "es") or "es").strip().lower()
+        if transport not in ELK_TRANSPORTS:
+            transport = "es"
         return cls(
             host=env("ELASTICSEARCH_HOST"),
             port=int(env("ELASTICSEARCH_PORT", "443") or "443"),
@@ -43,6 +59,12 @@ class ElkConfig:
             verify_certs=env_bool("ELASTICSEARCH_VERIFY_CERTS", True),
             index_prefix=env("ELASTICSEARCH_INDEX_PREFIX", "app") or "app",
             timeout=float(env("ELASTICSEARCH_TIMEOUT", "10") or "10"),
+            transport=transport,
+            logstash_url=(env("LOGSTASH_URL") or "").rstrip("/") or None,
+            # Standard OpenTelemetry env vars (no OJIICHAN_ prefix needed, though
+            # the resolver still honours an OJIICHAN_-prefixed override first).
+            otlp_endpoint=(env("OTEL_EXPORTER_OTLP_ENDPOINT") or "").rstrip("/") or None,
+            otlp_headers=env("OTEL_EXPORTER_OTLP_HEADERS"),
         )
 
     @property
@@ -53,6 +75,19 @@ class ElkConfig:
             return self.host
         scheme = "https" if self.use_ssl else "http"
         return f"{scheme}://{self.host}:{self.port}"
+
+    @property
+    def write_target(self) -> str | None:
+        """Return the configured sink URL for the active write transport.
+
+        ``None`` means the transport is unconfigured, so callers fall back to
+        console logging instead of attempting a doomed network call.
+        """
+        if self.transport == "logstash":
+            return self.logstash_url
+        if self.transport == "otlp":
+            return self.otlp_endpoint
+        return self.url
 
 
 @dataclass(frozen=True)

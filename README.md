@@ -41,6 +41,28 @@ To minimise Vaultwarden rate-limit pressure, all known secrets are warmed in one
 
 Non-secret options can still be set as env vars, for example `ELASTICSEARCH_PORT`, `ELASTICSEARCH_USE_SSL`, `ELASTICSEARCH_VERIFY_CERTS`, `ELASTICSEARCH_TIMEOUT`, and `BUGSINK_TIMEOUT`.
 
+### ELK write transports
+
+By default ojiichan indexes structured events straight into Elasticsearch. Set
+`ELK_TRANSPORT` to route them elsewhere instead — the document shape is identical
+across transports, so events stay queryable together regardless of how they were
+written.
+
+| `ELK_TRANSPORT` | Sink | Required config |
+| --- | --- | --- |
+| `es` (default) | `POST <host>/<prefix>-<topic>/_doc` straight to Elasticsearch | `ELASTICSEARCH_HOST` (+ auth) |
+| `logstash` | `POST` the document (plus an `index` field) to a Logstash HTTP input | `LOGSTASH_URL` |
+| `otlp` | `POST` an OpenTelemetry LogRecord to `<endpoint>/v1/logs` (usually a Collector) | `OTEL_EXPORTER_OTLP_ENDPOINT` (+ `OTEL_EXPORTER_OTLP_HEADERS`) |
+
+For `logstash`, route the `index` field in your pipeline with
+`elasticsearch { index => "%{index}" }`. For `otlp`, the standard
+`OTEL_EXPORTER_OTLP_*` env vars are honored. The same switch and env vars exist
+in the scaffolded TypeScript/Rust/Swift services.
+
+> **Reads stay on Elasticsearch.** `ELK_TRANSPORT` only changes the *write* path.
+> `ojiichan health` and `ojiichan logs` read from Elasticsearch no matter which
+> transport wrote the events, so those still need `ELASTICSEARCH_HOST`.
+
 ## CLI
 
 ```bash
@@ -225,9 +247,47 @@ Or use a nearby comment that agents can parse/read:
 # ojiichan: operation=matrix_exchange topic=auth failure=true issue_backend=bugsink tags=matrix,auth
 ```
 
-The comment form is recognized with Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc (`/* … */`, `*`) markers, so the same annotation works across Python, TypeScript, and Rust source.
+The comment form is recognized with Python/shell (`#`), C/Rust/TS (`//`, `///`, `//!`), and block/JSDoc (`/* … */`, `*`) markers, so the same annotation works across Python, TypeScript, Rust, and Swift source.
 
 Hints line up with ELK fields (`operation`, `topic`, `failure`) and issue tooling (`issue_backend`, `issue_query`, `runbook`) so an agent can jump from code to logs/issues quickly.
+
+### Extended `ojiichan:doc` blocks
+
+For code paths that need more than a one-line hint, the extended **doc** form is
+an agent-first markdown block: a short summary plus the *known failure modes* and
+*where to look first*, so an agent landing on a function can read the symptoms and
+the exact ELK/issue queries to run. It is a backward-compatible superset of the
+compact line — the same scalar keys, plus `summary` and the `## errors` /
+`## checks` sections:
+
+```python
+# ojiichan:doc operation=matrix_exchange topic=auth failure=true issue_backend=rustrak
+# summary: Exchange a Matrix login token for an access token.
+# ## errors
+# - 401 invalid_token → token expired; re-run the exchange
+# - timeout → homeserver slow; check Scaleway logs source=matrix-api
+# ## checks
+# 1. ELK: topic=auth operation=matrix_exchange failure=true
+# 2. Rustrak issues tagged matrix,auth
+# runbook: docs/runbooks/matrix-auth.md
+```
+
+It parses with the same comment markers, so the block works in Python, TypeScript,
+Rust, and Swift source. In Python:
+
+```python
+from ojiichan import parse_any, parse_doc
+
+doc = parse_doc(block_text)          # → DiagnosticDoc(summary=…, errors=(…), checks=(…))
+doc.to_hint()                        # downcast to a DiagnosticHint for log_event(data=…)
+doc.to_markdown()                    # agent-facing render (round-trips back through parse_doc)
+
+parse_any(text)                      # auto-detects: DiagnosticDoc for a doc block, else DiagnosticHint
+```
+
+The MCP `parse_diagnostic_annotation` tool understands both forms; for a doc block
+it returns the parsed `errors`/`checks` lists and a `markdown` render alongside the
+scalar `fields`.
 
 ## MCP server
 
