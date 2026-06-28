@@ -11,7 +11,18 @@ from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
 from .config import ISSUE_BACKENDS, RustrakConfig, ScalewayConfig, default_issue_backend
+from .credentials import get_secret
 from .elk import ElkClient, check_elk
+from .provision import (
+    ElkProvisionConfig,
+    ElkProvisioner,
+    OtelProvisionConfig,
+    OtelProvisioner,
+    RustrakProvisionConfig,
+    RustrakProvisioner,
+    provision_all,
+)
+from .provision.base import ProvisionResult
 from .rustrak import RustrakClient, check_rustrak
 from .scaffold import available_languages, scaffold
 from .scaleway import ScalewayLogsClient, check_scaleway
@@ -195,6 +206,197 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
     return 0
 
 
+def _render_provision(result: ProvisionResult, args: argparse.Namespace) -> int:
+    if args.json:
+        _print_json(result.to_dict())
+    else:
+        verb = "Plan" if result.dry_run else "Provision"
+        print(f"{verb} {result.target} (ok={result.ok})")
+        for step in result.steps:
+            glyph = {
+                "exists": "[ = ]",
+                "created": "[ + ]",
+                "would-create": "[ ~ ]",
+                "failed": "[FAIL]",
+            }.get(step.status, "[ ? ]")
+            print(f"  {glyph} {step.name}: {step.detail or step.status}")
+            if step.error:
+                print(f"        error: {step.error}")
+        if result.secrets_written:
+            print(f"  vault: wrote {', '.join(result.secrets_written)}")
+        for note in result.notes:
+            print(f"  note: {note}")
+    return 0 if result.ok else 1
+
+
+def cmd_provision_all(args: argparse.Namespace) -> int:
+    """Onboard one project's logging + telemetry with near-zero interaction.
+
+    Resolves the obachan platform admin connection and OTLP endpoint from
+    ``--flag`` -> env -> Vault, so the common case is just ``--project <name>``.
+    """
+    results = provision_all(
+        project=args.project,
+        elk_admin_url=args.admin_url or get_secret("OPENSEARCH_ADMIN_URL"),
+        elk_admin_password=args.admin_password or get_secret("OPENSEARCH_ADMIN_PASSWORD"),
+        elk_admin_user=args.admin_user or get_secret("OPENSEARCH_ADMIN_USER") or "admin",
+        index_prefix=args.prefix,
+        retention_days=args.retention_days,
+        otlp_endpoint=args.endpoint or get_secret("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        otlp_headers=args.headers or get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
+        otlp_probe=args.probe,
+        rustrak_dsn=args.dsn or get_secret("SENTRY_DSN"),
+        rustrak_api_token=args.api_token or get_secret("RUSTRAK_API_TOKEN"),
+        rustrak_project_id=args.project_id or get_secret("RUSTRAK_PROJECT_ID"),
+        rustrak_admin_url=get_secret("RUSTRAK_ADMIN_URL"),
+        rustrak_admin_token=get_secret("RUSTRAK_ADMIN_TOKEN"),
+        dry_run=args.dry_run,
+        write_vault=not args.no_vault,
+        verify_certs=not args.insecure,
+    )
+    if args.json:
+        _print_json([r.to_dict() for r in results])
+        return 0 if all(r.ok for r in results) else 1
+    rc = 0
+    for result in results:
+        rc |= _render_provision(result, args)
+    return rc
+
+
+def cmd_provision_elk(args: argparse.Namespace) -> int:
+    admin_url = args.admin_url or get_secret("OPENSEARCH_ADMIN_URL")
+    admin_password = args.admin_password or get_secret("OPENSEARCH_ADMIN_PASSWORD")
+    if not admin_url or not admin_password:
+        print(
+            "error: OpenSearch admin URL and password are required "
+            "(--admin-url/--admin-password, OPENSEARCH_ADMIN_URL/OPENSEARCH_ADMIN_PASSWORD, "
+            "or seed elk/admin-* in the vault)",
+            file=sys.stderr,
+        )
+        return 2
+    config = ElkProvisionConfig(
+        admin_url=admin_url,
+        admin_user=args.admin_user or get_secret("OPENSEARCH_ADMIN_USER") or "admin",
+        admin_password=admin_password,
+        project=args.project,
+        index_prefix=args.prefix or args.project,
+        retention_days=args.retention_days,
+        scoped_user=args.scoped_user,
+        scoped_password=args.scoped_password,
+        verify_certs=not args.insecure,
+    )
+    result = ElkProvisioner(config).provision(dry_run=args.dry_run, write_vault=not args.no_vault)
+    return _render_provision(result, args)
+
+
+def cmd_provision_rustrak(args: argparse.Namespace) -> int:
+    config = RustrakProvisionConfig(
+        project=args.project,
+        dsn=args.dsn or get_secret("SENTRY_DSN"),
+        api_token=args.api_token or get_secret("RUSTRAK_API_TOKEN"),
+        project_id=args.project_id or get_secret("RUSTRAK_PROJECT_ID"),
+        admin_url=args.admin_url or get_secret("RUSTRAK_ADMIN_URL"),
+        admin_token=args.admin_token or get_secret("RUSTRAK_ADMIN_TOKEN"),
+        create_path=args.create_path,
+        verify_certs=not args.insecure,
+    )
+    result = RustrakProvisioner(config).provision(
+        dry_run=args.dry_run, write_vault=not args.no_vault
+    )
+    return _render_provision(result, args)
+
+
+def cmd_provision_otel(args: argparse.Namespace) -> int:
+    endpoint = args.endpoint or get_secret("OTEL_EXPORTER_OTLP_ENDPOINT")
+    if not endpoint:
+        print(
+            "error: OTLP endpoint required (--endpoint or OTEL_EXPORTER_OTLP_ENDPOINT)",
+            file=sys.stderr,
+        )
+        return 2
+    config = OtelProvisionConfig(
+        endpoint=endpoint,
+        headers=args.headers or get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
+        probe=args.probe,
+        verify_certs=not args.insecure,
+    )
+    result = OtelProvisioner(config).provision(dry_run=args.dry_run, write_vault=not args.no_vault)
+    return _render_provision(result, args)
+
+
+def _add_provision_commands(sub: argparse._SubParsersAction) -> None:
+    provision = sub.add_parser(
+        "provision",
+        help="Onboard a project onto the ELK/Rustrak/OTLP platform and stash creds in Vault",
+    )
+    psub = provision.add_subparsers(dest="target", required=True)
+
+    def _common(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--project", required=True, help="Project/service name")
+        parser.add_argument(
+            "--dry-run", action="store_true", help="Plan only; do not mutate or write Vault"
+        )
+        parser.add_argument(
+            "--no-vault", action="store_true", help="Skip writing credentials to Vault"
+        )
+        parser.add_argument("--insecure", action="store_true", help="Do not verify TLS certs")
+        parser.add_argument("--json", action="store_true")
+
+    allp = psub.add_parser(
+        "all",
+        help="Onboard a project's logging + telemetry in one shot (just --project)",
+    )
+    _common(allp)
+    allp.add_argument("--admin-url", help="OpenSearch URL (or OPENSEARCH_ADMIN_URL / vault)")
+    allp.add_argument("--admin-user", help="OpenSearch admin user (default: admin)")
+    allp.add_argument(
+        "--admin-password", help="OpenSearch admin password (or OPENSEARCH_ADMIN_PASSWORD / vault)"
+    )
+    allp.add_argument("--prefix", help="Index prefix (default: project name)")
+    allp.add_argument("--retention-days", type=int, default=30)
+    allp.add_argument("--endpoint", help="OTLP endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT / vault)")
+    allp.add_argument("--headers", help="OTLP headers (or OTEL_EXPORTER_OTLP_HEADERS / vault)")
+    allp.add_argument("--probe", action="store_true", help="Probe OTLP endpoint reachability")
+    allp.add_argument("--dsn", help="Rustrak ingest DSN to register (or SENTRY_DSN / vault)")
+    allp.add_argument("--api-token", help="Rustrak API token (or RUSTRAK_API_TOKEN / vault)")
+    allp.add_argument("--project-id", help="Rustrak project id (or RUSTRAK_PROJECT_ID / vault)")
+    allp.set_defaults(func=cmd_provision_all)
+
+    elk = psub.add_parser("elk", help="Create the project's OpenSearch template/role/user")
+    _common(elk)
+    elk.add_argument("--admin-url", help="OpenSearch URL (or OPENSEARCH_ADMIN_URL)")
+    elk.add_argument("--admin-user", help="OpenSearch admin user (default: admin)")
+    elk.add_argument(
+        "--admin-password", help="OpenSearch admin password (or OPENSEARCH_ADMIN_PASSWORD)"
+    )
+    elk.add_argument("--prefix", help="Index prefix (default: project name)")
+    elk.add_argument("--retention-days", type=int, default=30)
+    elk.add_argument("--scoped-user", help="Scoped writer username (default: <project>-writer)")
+    elk.add_argument("--scoped-password", help="Scoped writer password (default: generated)")
+    elk.set_defaults(func=cmd_provision_elk)
+
+    rustrak = psub.add_parser("rustrak", help="Register/create the project's Rustrak DSN + token")
+    _common(rustrak)
+    rustrak.add_argument("--dsn", help="Existing ingest DSN to register (or SENTRY_DSN)")
+    rustrak.add_argument(
+        "--api-token", help="Existing API token to register (or RUSTRAK_API_TOKEN)"
+    )
+    rustrak.add_argument("--project-id", help="Rustrak project id (or RUSTRAK_PROJECT_ID)")
+    rustrak.add_argument("--admin-url", help="Admin API base URL (or RUSTRAK_ADMIN_URL)")
+    rustrak.add_argument("--admin-token", help="Admin API token (or RUSTRAK_ADMIN_TOKEN)")
+    rustrak.add_argument(
+        "--create-path", default="api/0/projects/", help="Admin project-create path"
+    )
+    rustrak.set_defaults(func=cmd_provision_rustrak)
+
+    otel = psub.add_parser("otel", help="Record the OTLP endpoint/headers for the project")
+    _common(otel)
+    otel.add_argument("--endpoint", help="OTLP endpoint (or OTEL_EXPORTER_OTLP_ENDPOINT)")
+    otel.add_argument("--headers", help="OTLP headers (or OTEL_EXPORTER_OTLP_HEADERS)")
+    otel.add_argument("--probe", action="store_true", help="Probe endpoint reachability")
+    otel.set_defaults(func=cmd_provision_otel)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Reusable diagnostics for ELK + Bugsink/Sentry")
     parser.add_argument("--env-file", help="Load environment variables from a .env file")
@@ -278,6 +480,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scaffold_cmd.add_argument("--json", action="store_true")
     scaffold_cmd.set_defaults(func=cmd_scaffold)
+
+    _add_provision_commands(sub)
 
     return parser
 

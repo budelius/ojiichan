@@ -20,7 +20,19 @@
       "ojiichan/rustrak-base-url": "Rustrak API base URL; defaults to https://ingest.rustrak.pseekoo.io (UI host is the same domain without the ingest. prefix)",
       "ojiichan/rustrak-project-id": "Default Rustrak project id used when callers omit one",
       "ojiichan/scaleway/loki-url": "Scaleway Cockpit logs data-source URL (scw cockpit data-source list -> type=logs 'url')",
-      "ojiichan/scaleway/cockpit-token": "Scaleway Cockpit token with query_logs scope (scw cockpit token create ... token-scopes.query_logs=true)"
+      "ojiichan/scaleway/cockpit-token": "Scaleway Cockpit token with query_logs scope (scw cockpit token create ... token-scopes.query_logs=true)",
+      "ojiichan/elk/admin-url": "obachan OpenSearch admin URL (seeded once; lets `ojiichan provision all` run with just --project)",
+      "ojiichan/elk/admin-username": "OpenSearch admin user (default admin)",
+      "ojiichan/elk/admin-password": "OpenSearch admin password (privileged; used only to create per-project access)",
+      "ojiichan/rustrak/admin-url": "Optional Rustrak admin API base URL for project creation",
+      "ojiichan/rustrak/admin-token": "Optional Rustrak admin API token",
+      "ojiichan/elk/host": "OpenSearch/ELK host or base URL (written by `ojiichan provision elk`)",
+      "ojiichan/elk/username": "Scoped writer username (written by `ojiichan provision elk`)",
+      "ojiichan/elk/password": "Scoped writer password (written by `ojiichan provision elk`)",
+      "ojiichan/elk/index-prefix": "Project index prefix (written by `ojiichan provision elk`)",
+      "ojiichan/rustrak/api-token": "Rustrak API token (written by `ojiichan provision rustrak`)",
+      "ojiichan/otel/exporter-endpoint": "OTLP exporter endpoint (written by `ojiichan provision otel`)",
+      "ojiichan/otel/exporter-headers": "OTLP exporter headers, may carry a bearer token (written by `ojiichan provision otel`)"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",

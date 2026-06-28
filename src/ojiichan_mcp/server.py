@@ -18,8 +18,18 @@ from mcp.server.fastmcp import FastMCP
 
 from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
+from ojiichan.credentials import get_secret
 from ojiichan.dsl import DiagnosticDoc, parse_any
 from ojiichan.elk import ElkClient, check_elk
+from ojiichan.provision import (
+    ElkProvisionConfig,
+    ElkProvisioner,
+    OtelProvisionConfig,
+    OtelProvisioner,
+    RustrakProvisionConfig,
+    RustrakProvisioner,
+    provision_all,
+)
 from ojiichan.rustrak import RustrakClient, check_rustrak
 from ojiichan.scaffold import available_languages, render_files
 from ojiichan.scaleway import ScalewayLogsClient, check_scaleway
@@ -183,6 +193,119 @@ def scaffold_observability(language: str, backend: str = "rustrak") -> dict[str,
     except ValueError as exc:
         return {"ok": False, "error": str(exc), "languages": list(available_languages())}
     return {"ok": True, "language": language, "backend": backend, "files": files}
+
+
+@mcp.tool()
+def provision_project(
+    project: str,
+    apply: bool = False,
+    write_vault: bool = True,
+) -> dict[str, Any]:
+    """One-shot: onboard a project's logging + telemetry onto the obachan cluster.
+
+    The low-interaction entry point — pass just ``project`` and ojiichan resolves
+    the OpenSearch admin connection, OTLP endpoint, and Rustrak config from env or
+    the vault, then creates the project's ELK access, records its OTLP wiring, and
+    registers its Rustrak project, writing every credential back to the vault.
+    Backends with no usable config are skipped (with a note), not failed.
+
+    Defaults to a dry-run plan; set ``apply=True`` to make changes.
+    """
+    results = provision_all(
+        project=project,
+        elk_admin_url=get_secret("OPENSEARCH_ADMIN_URL"),
+        elk_admin_password=get_secret("OPENSEARCH_ADMIN_PASSWORD"),
+        elk_admin_user=get_secret("OPENSEARCH_ADMIN_USER") or "admin",
+        otlp_endpoint=get_secret("OTEL_EXPORTER_OTLP_ENDPOINT"),
+        otlp_headers=get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
+        rustrak_dsn=get_secret("SENTRY_DSN"),
+        rustrak_api_token=get_secret("RUSTRAK_API_TOKEN"),
+        rustrak_project_id=get_secret("RUSTRAK_PROJECT_ID"),
+        rustrak_admin_url=get_secret("RUSTRAK_ADMIN_URL"),
+        rustrak_admin_token=get_secret("RUSTRAK_ADMIN_TOKEN"),
+        dry_run=not apply,
+        write_vault=write_vault,
+    )
+    return {
+        "ok": all(r.ok for r in results),
+        "results": [r.to_dict() for r in results],
+    }
+
+
+@mcp.tool()
+def provision_elk(
+    project: str,
+    admin_url: str,
+    admin_password: str,
+    admin_user: str = "admin",
+    prefix: str | None = None,
+    retention_days: int = 30,
+    apply: bool = False,
+    write_vault: bool = True,
+) -> dict[str, Any]:
+    """Onboard one project onto an existing OpenSearch (index template, ISM, role, user).
+
+    Defaults to a dry-run plan (``apply=False``); set ``apply=True`` to create the
+    resources and write the scoped credentials to Vault. Mirrors obachan's
+    opensearch-bootstrap contract, scoped to a single project.
+    """
+    config = ElkProvisionConfig(
+        admin_url=admin_url,
+        admin_user=admin_user,
+        admin_password=admin_password,
+        project=project,
+        index_prefix=prefix or project,
+        retention_days=retention_days,
+    )
+    result = ElkProvisioner(config).provision(dry_run=not apply, write_vault=write_vault)
+    return result.to_dict()
+
+
+@mcp.tool()
+def provision_rustrak(
+    project: str,
+    dsn: str | None = None,
+    api_token: str | None = None,
+    project_id: str | None = None,
+    admin_url: str | None = None,
+    admin_token: str | None = None,
+    apply: bool = False,
+    write_vault: bool = True,
+) -> dict[str, Any]:
+    """Register (or create) a project's Rustrak DSN/token and stash it in Vault.
+
+    Register-only when given ``dsn``/``api_token``; creates the project when
+    ``admin_url``/``admin_token`` are supplied. Dry-run unless ``apply=True``.
+    """
+    config = RustrakProvisionConfig(
+        project=project,
+        dsn=dsn,
+        api_token=api_token,
+        project_id=project_id,
+        admin_url=admin_url,
+        admin_token=admin_token,
+    )
+    result = RustrakProvisioner(config).provision(dry_run=not apply, write_vault=write_vault)
+    return result.to_dict()
+
+
+@mcp.tool()
+def provision_otel(
+    project: str,
+    endpoint: str,
+    headers: str | None = None,
+    probe: bool = False,
+    apply: bool = False,
+    write_vault: bool = True,
+) -> dict[str, Any]:
+    """Record the project's OTLP exporter endpoint/headers in Vault.
+
+    Dry-run unless ``apply=True``. ``project`` is accepted for symmetry; the OTLP
+    config is shared, so the same endpoint serves every project.
+    """
+    config = OtelProvisionConfig(endpoint=endpoint, headers=headers, probe=probe)
+    result = OtelProvisioner(config).provision(dry_run=not apply, write_vault=write_vault)
+    return result.to_dict()
 
 
 @mcp.tool()
