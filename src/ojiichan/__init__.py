@@ -13,6 +13,15 @@ from .dsl import (
     parse_doc,
 )
 from .elk import ElkClient, check_elk, query_elk_logs
+from .provision import (
+    ElkProvisionConfig,
+    ElkProvisioner,
+    OtelProvisionConfig,
+    OtelProvisioner,
+    ProvisionResult,
+    RustrakProvisionConfig,
+    RustrakProvisioner,
+)
 from .rustrak import RustrakClient, RustrakIssue, check_rustrak
 from .scaffold import ScaffoldResult, available_languages, render_files, scaffold
 from .scaleway import ScalewayLogEntry, ScalewayLogsClient, check_scaleway, query_scaleway_logs
@@ -24,8 +33,15 @@ __all__ = [
     "DiagnosticDoc",
     "DiagnosticHint",
     "ElkClient",
+    "ElkProvisionConfig",
+    "ElkProvisioner",
+    "OtelProvisionConfig",
+    "OtelProvisioner",
+    "ProvisionResult",
     "RustrakClient",
     "RustrakIssue",
+    "RustrakProvisionConfig",
+    "RustrakProvisioner",
     "ScaffoldResult",
     "ScalewayLogEntry",
     "ScalewayLogsClient",

@@ -98,6 +98,38 @@ scw cockpit data-source list region=fr-par          # copy the type=logs "url"
 scw cockpit token create name=ojiichan region=fr-par token-scopes.query_logs=true
 ```
 
+## Provisioning (create a project's access on the obachan cluster)
+
+`ojiichan provision` **creates a service's access** on the cluster `obachan`
+already runs (OpenSearch, the OTLP pipeline, Rustrak) and — when the `vault` extra
+is installed — writes the resulting credentials to Vault so the service and its
+scaffolded siblings resolve them automatically. It only *creates access*; it never
+installs the platform and never tears anything down.
+
+The low-interaction path is one command — pass just the project name and the admin
+connection + OTLP endpoint resolve from Vault (seeded once by obachan/operator):
+
+```bash
+ojiichan provision all --project m3rp-api --dry-run    # plan (mutates nothing)
+ojiichan provision all --project m3rp-api              # create access + write creds to Vault
+```
+
+That runs the per-backend steps below; each backend with no usable config is
+skipped with a note rather than failing. Run them individually for control:
+
+```bash
+ojiichan provision elk --project m3rp-api          # index template + ISM + role + user + mapping
+ojiichan provision rustrak --project m3rp-api --dsn "https://<key>@ingest.rustrak.pseekoo.io/42"
+ojiichan provision otel --project m3rp-api --endpoint https://otel.pseekoo.io --probe
+```
+
+Admin creds resolve `--flag` → env (`OPENSEARCH_ADMIN_URL` /
+`OPENSEARCH_ADMIN_PASSWORD`) → Vault (`elk/admin-*`). Every step is idempotent
+(`check` then create-or-replace), so re-running reports `exists`. Use `--no-vault`
+to skip credential storage, `--json` for machine output. Full contract:
+[`docs/PROVISIONING.md`](docs/PROVISIONING.md). Agents: start at
+[`AGENTS.md`](AGENTS.md).
+
 ## Scaffolding TypeScript / Rust / Swift services
 
 ojiichan's Python library can't run inside a Node, Rust, or Swift service, so
@@ -331,6 +363,8 @@ Exposed tools:
 - `rustrak_health`
 - `rustrak_issues`
 - `scaffold_observability` (renders TypeScript/Rust setup files)
+- `provision_project` (one-shot: all backends from just a project name; dry-run by default)
+- `provision_elk` / `provision_rustrak` / `provision_otel` (dry-run by default; `apply=True` mutates + writes Vault)
 - `create_bead_from_issue`
 - `xcode_build`
 - `xcode_test`

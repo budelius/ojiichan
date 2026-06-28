@@ -57,6 +57,20 @@ SECRET_MAP: dict[str, str] = {
     "SENTRY_BASE_URL": "sentry-base-url",
     "SCALEWAY_LOKI_URL": "scaleway/loki-url",
     "SCALEWAY_COCKPIT_TOKEN": "scaleway/cockpit-token",
+    # OpenTelemetry exporter wiring, written by `ojiichan provision otel`. The
+    # endpoint is non-secret but lives here so the read-path resolves it from the
+    # vault too; the headers may carry a bearer token, so they are a secret.
+    "OTEL_EXPORTER_OTLP_ENDPOINT": "otel/exporter-endpoint",
+    "OTEL_EXPORTER_OTLP_HEADERS": "otel/exporter-headers",
+    # Platform admin connection for `ojiichan provision`. These are the obachan
+    # cluster's privileged OpenSearch credentials, seeded once (by obachan or the
+    # operator) so an agent can `provision --project X` with no admin args — the
+    # admin URL/user/password resolve from the vault automatically.
+    "OPENSEARCH_ADMIN_URL": "elk/admin-url",
+    "OPENSEARCH_ADMIN_USER": "elk/admin-username",
+    "OPENSEARCH_ADMIN_PASSWORD": "elk/admin-password",
+    "RUSTRAK_ADMIN_URL": "rustrak/admin-url",
+    "RUSTRAK_ADMIN_TOKEN": "rustrak/admin-token",
 }
 
 _lock = Lock()
