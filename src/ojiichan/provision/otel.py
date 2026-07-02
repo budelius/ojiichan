@@ -19,6 +19,7 @@ from dataclasses import dataclass
 
 import httpx
 
+from ..config import tls_verify
 from . import vault_write
 from .base import ProvisionResult, ProvisionStep, run_steps
 
@@ -29,6 +30,7 @@ class OtelProvisionConfig:
     headers: str | None = None
     probe: bool = False
     verify_certs: bool = True
+    ca_cert: str | None = None
     timeout: float = 10.0
 
 
@@ -44,7 +46,9 @@ class OtelProvisioner:
         return endpoint if endpoint.endswith("/v1/logs") else f"{endpoint}/v1/logs"
 
     def _probe(self) -> str:
-        client = self._client or httpx.Client(verify=self.c.verify_certs, timeout=self.c.timeout)
+        client = self._client or httpx.Client(
+            verify=tls_verify(self.c.verify_certs, self.c.ca_cert), timeout=self.c.timeout
+        )
         from ..transports import parse_otlp_headers
 
         headers = {"Content-Type": "application/json", **parse_otlp_headers(self.c.headers)}

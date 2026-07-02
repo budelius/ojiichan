@@ -25,6 +25,7 @@ from typing import Any
 
 import httpx
 
+from ..config import tls_verify
 from . import vault_write
 from .base import ProvisionResult, ProvisionStep, run_steps
 
@@ -44,6 +45,7 @@ class RustrakProvisionConfig:
     admin_token: str | None = None
     create_path: str = DEFAULT_CREATE_PATH
     verify_certs: bool = True
+    ca_cert: str | None = None
     timeout: float = 15.0
 
 
@@ -71,7 +73,7 @@ class RustrakProvisioner:
                     "Authorization": f"Bearer {config.admin_token}",
                     "Content-Type": "application/json",
                 },
-                verify=config.verify_certs,
+                verify=tls_verify(config.verify_certs, config.ca_cert),
                 timeout=config.timeout,
             )
 

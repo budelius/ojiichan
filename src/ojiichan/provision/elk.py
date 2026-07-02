@@ -23,6 +23,7 @@ from typing import Any
 
 import httpx
 
+from ..config import tls_verify
 from . import vault_write
 from .base import ProvisionResult, ProvisionStep, run_steps
 
@@ -54,6 +55,7 @@ class ElkProvisionConfig:
     scoped_user: str | None = None
     scoped_password: str | None = None
     verify_certs: bool = True
+    ca_cert: str | None = None
     timeout: float = 15.0
 
 
@@ -69,7 +71,7 @@ class ElkProvisioner:
         self._client = client or httpx.Client(
             base_url=config.admin_url.rstrip("/"),
             auth=(config.admin_user, config.admin_password),
-            verify=config.verify_certs,
+            verify=tls_verify(config.verify_certs, config.ca_cert),
             timeout=config.timeout,
             headers={"Content-Type": "application/json"},
         )

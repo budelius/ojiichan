@@ -253,6 +253,7 @@ def cmd_provision_all(args: argparse.Namespace) -> int:
         dry_run=args.dry_run,
         write_vault=not args.no_vault,
         verify_certs=not args.insecure,
+        ca_cert=args.ca_cert or get_secret("ELASTICSEARCH_CA_CERT"),
     )
     if args.json:
         _print_json([r.to_dict() for r in results])
@@ -284,6 +285,7 @@ def cmd_provision_elk(args: argparse.Namespace) -> int:
         scoped_user=args.scoped_user,
         scoped_password=args.scoped_password,
         verify_certs=not args.insecure,
+        ca_cert=args.ca_cert or get_secret("ELASTICSEARCH_CA_CERT"),
     )
     result = ElkProvisioner(config).provision(dry_run=args.dry_run, write_vault=not args.no_vault)
     return _render_provision(result, args)
@@ -299,6 +301,7 @@ def cmd_provision_rustrak(args: argparse.Namespace) -> int:
         admin_token=args.admin_token or get_secret("RUSTRAK_ADMIN_TOKEN"),
         create_path=args.create_path,
         verify_certs=not args.insecure,
+        ca_cert=args.ca_cert or get_secret("ELASTICSEARCH_CA_CERT"),
     )
     result = RustrakProvisioner(config).provision(
         dry_run=args.dry_run, write_vault=not args.no_vault
@@ -319,6 +322,7 @@ def cmd_provision_otel(args: argparse.Namespace) -> int:
         headers=args.headers or get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
         probe=args.probe,
         verify_certs=not args.insecure,
+        ca_cert=args.ca_cert or get_secret("ELASTICSEARCH_CA_CERT"),
     )
     result = OtelProvisioner(config).provision(dry_run=args.dry_run, write_vault=not args.no_vault)
     return _render_provision(result, args)
@@ -340,6 +344,14 @@ def _add_provision_commands(sub: argparse._SubParsersAction) -> None:
             "--no-vault", action="store_true", help="Skip writing credentials to Vault"
         )
         parser.add_argument("--insecure", action="store_true", help="Do not verify TLS certs")
+        parser.add_argument(
+            "--ca-cert",
+            help=(
+                "Path to a CA bundle (PEM) to trust — e.g. obachan's "
+                "obachan-internal-ca — so TLS to the internal OpenSearch verifies "
+                "instead of failing (or ELASTICSEARCH_CA_CERT / vault)"
+            ),
+        )
         parser.add_argument("--json", action="store_true")
 
     allp = psub.add_parser(

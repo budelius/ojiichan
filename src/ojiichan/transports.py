@@ -73,7 +73,7 @@ def send_logstash(config: ElkConfig, index: str, document: dict[str, Any]) -> bo
         json=payload,
         auth=auth,
         timeout=config.timeout,
-        verify=config.verify_certs,
+        verify=config.verify,
     )
     return 200 <= response.status_code < 300
 
@@ -160,6 +160,6 @@ def send_otlp(config: ElkConfig, document: dict[str, Any], *, level: str) -> boo
         json=payload,
         headers=headers,
         timeout=config.timeout,
-        verify=config.verify_certs,
+        verify=config.verify,
     )
     return 200 <= response.status_code < 300

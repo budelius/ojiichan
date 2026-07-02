@@ -51,6 +51,7 @@ def provision_all(
     dry_run: bool = False,
     write_vault: bool = True,
     verify_certs: bool = True,
+    ca_cert: str | None = None,
 ) -> list[ProvisionResult]:
     """Run ELK + OTel + Rustrak onboarding for one project; return one result each.
 
@@ -72,6 +73,7 @@ def provision_all(
                 scoped_user=scoped_user,
                 scoped_password=scoped_password,
                 verify_certs=verify_certs,
+                ca_cert=ca_cert,
             )
         )
         results.append(elk.provision(dry_run=dry_run, write_vault=write_vault))
@@ -93,6 +95,7 @@ def provision_all(
                 headers=otlp_headers,
                 probe=otlp_probe,
                 verify_certs=verify_certs,
+                ca_cert=ca_cert,
             )
         )
         results.append(otel.provision(dry_run=dry_run, write_vault=write_vault))
@@ -115,6 +118,7 @@ def provision_all(
                 admin_url=rustrak_admin_url,
                 admin_token=rustrak_admin_token,
                 verify_certs=verify_certs,
+                ca_cert=ca_cert,
             )
         )
         results.append(rustrak.provision(dry_run=dry_run, write_vault=write_vault))

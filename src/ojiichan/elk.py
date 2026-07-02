@@ -46,6 +46,10 @@ class ElkClient:
             if self.config.username and self.config.password
             else None,
             verify_certs=self.config.verify_certs,
+            # Trust obachan's private ``obachan-internal-ca`` when a bundle is
+            # configured; ignored when verify_certs is False. ``None`` keeps the
+            # system trust store (unchanged default behaviour).
+            ca_certs=self.config.ca_cert,
             ssl_show_warn=False,
             timeout=self.config.timeout,
         )

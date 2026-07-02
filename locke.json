@@ -41,6 +41,7 @@
       "ELASTICSEARCH_PORT": "Elasticsearch port; defaults to 443",
       "ELASTICSEARCH_USE_SSL": "true/false; defaults to true",
       "ELASTICSEARCH_VERIFY_CERTS": "true/false; defaults to true",
+      "ELASTICSEARCH_CA_CERT": "Path to a CA bundle (PEM) to trust for OpenSearch TLS; set to obachan's obachan-internal-ca so verification succeeds against the internal cluster instead of using --insecure",
       "ELASTICSEARCH_TIMEOUT": "Elasticsearch timeout seconds; defaults to 10",
       "BUGSINK_TIMEOUT": "Bugsink API timeout seconds; defaults to 10",
       "SENTRY_TIMEOUT": "Sentry API timeout seconds; defaults to 10",

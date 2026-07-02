@@ -21,6 +21,20 @@ def env_bool(name: str, default: bool = False) -> bool:
     return value.lower() in {"1", "true", "yes", "on"}
 
 
+def tls_verify(verify_certs: bool, ca_cert: str | None) -> bool | str:
+    """Resolve a ``verify=`` value for httpx / opensearch-py / requests.
+
+    ``False`` disables verification entirely (the ``--insecure`` escape hatch).
+    Otherwise a ``ca_cert`` path pins trust to that CA bundle — needed for
+    obachan's OpenSearch, whose node/HTTP cert is issued by the private
+    ``obachan-internal-ca`` and so is not in the system trust store — while a
+    missing ``ca_cert`` falls back to the system store (``True``).
+    """
+    if not verify_certs:
+        return False
+    return ca_cert or True
+
+
 ELK_TRANSPORTS = ("es", "otlp", "logstash")
 
 
@@ -32,6 +46,10 @@ class ElkConfig:
     password: str | None = None
     use_ssl: bool = True
     verify_certs: bool = True
+    # Path to a CA bundle (PEM) to trust in addition to / instead of the system
+    # store. Set ``ELASTICSEARCH_CA_CERT`` to obachan's ``obachan-internal-ca``
+    # so reads/writes against the internal OpenSearch verify instead of failing.
+    ca_cert: str | None = None
     index_prefix: str = "app"
     timeout: float = 10
     # Write transport for structured events. ``es`` indexes straight into
@@ -57,6 +75,7 @@ class ElkConfig:
             password=env("ELASTICSEARCH_PASSWORD"),
             use_ssl=env_bool("ELASTICSEARCH_USE_SSL", True),
             verify_certs=env_bool("ELASTICSEARCH_VERIFY_CERTS", True),
+            ca_cert=env("ELASTICSEARCH_CA_CERT"),
             index_prefix=env("ELASTICSEARCH_INDEX_PREFIX", "app") or "app",
             timeout=float(env("ELASTICSEARCH_TIMEOUT", "10") or "10"),
             transport=transport,
@@ -75,6 +94,11 @@ class ElkConfig:
             return self.host
         scheme = "https" if self.use_ssl else "http"
         return f"{scheme}://{self.host}:{self.port}"
+
+    @property
+    def verify(self) -> bool | str:
+        """``verify=`` value for httpx transports (bool or CA-bundle path)."""
+        return tls_verify(self.verify_certs, self.ca_cert)
 
     @property
     def write_target(self) -> str | None:
