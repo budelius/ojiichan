@@ -244,6 +244,48 @@ class ScalewayConfig:
         return f"{self.loki_url}/loki/api/v1/query_range"
 
 
+@dataclass(frozen=True)
+class ObachanBackendConfig:
+    """Configuration for the obachan/OpenSearch backend.
+
+    Reads from ELASTICSEARCH_* env vars (same as ElkConfig) with an optional
+    OBACHAN_OPENSEARCH_HOST override for cases where ojiichan points at a different
+    OpenSearch cluster from the general ELK target. Wraps an ElkConfig so existing
+    credential resolution and TLS logic is reused without duplication.
+
+    The ``knative_namespace`` is the Kubernetes namespace where Knative services run;
+    it is used as a contextual label when querying Knative function logs.
+    """
+
+    elk_config: ElkConfig
+    knative_namespace: str = "knative-serving"
+
+    @classmethod
+    def from_env(cls) -> ObachanBackendConfig:
+        obachan_host = env("OBACHAN_OPENSEARCH_HOST")
+        if obachan_host:
+            # A distinct OpenSearch endpoint for the obachan platform — build a
+            # custom ElkConfig pointing at that host while inheriting all other
+            # ELASTICSEARCH_* settings (auth, TLS, index prefix, timeout).
+            elk = ElkConfig(
+                host=obachan_host,
+                port=int(env("ELASTICSEARCH_PORT", "443") or "443"),
+                username=env("ELASTICSEARCH_USERNAME"),
+                password=env("ELASTICSEARCH_PASSWORD"),
+                use_ssl=env_bool("ELASTICSEARCH_USE_SSL", True),
+                verify_certs=env_bool("ELASTICSEARCH_VERIFY_CERTS", True),
+                ca_cert=env("ELASTICSEARCH_CA_CERT"),
+                index_prefix=env("ELASTICSEARCH_INDEX_PREFIX", "app") or "app",
+                timeout=float(env("ELASTICSEARCH_TIMEOUT", "10") or "10"),
+            )
+        else:
+            elk = ElkConfig.from_env()
+        return cls(
+            elk_config=elk,
+            knative_namespace=env("OBACHAN_KNATIVE_NAMESPACE") or "knative-serving",
+        )
+
+
 ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink")
 
 

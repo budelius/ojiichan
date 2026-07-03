@@ -57,6 +57,11 @@ SECRET_MAP: dict[str, str] = {
     "SENTRY_BASE_URL": "sentry-base-url",
     "SCALEWAY_LOKI_URL": "scaleway/loki-url",
     "SCALEWAY_COCKPIT_TOKEN": "scaleway/cockpit-token",
+    # obachan platform: future REST API credentials (resolved via locke at runtime).
+    "OBACHAN_API_URL": "obachan/api-url",
+    "OBACHAN_API_KEY": "obachan/api-key",
+    # Optional override pointing at a different OpenSearch from the shared ELK target.
+    "OBACHAN_OPENSEARCH_HOST": "obachan/opensearch-host",
     # OpenTelemetry exporter wiring, written by `ojiichan provision otel`. The
     # endpoint is non-secret but lives here so the read-path resolves it from the
     # vault too; the headers may carry a bearer token, so they are a secret.
