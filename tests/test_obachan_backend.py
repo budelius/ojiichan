@@ -45,6 +45,8 @@ def test_default_issue_backend_auto_when_no_opensearch(
     monkeypatch.delenv("OJIICHAN_ELASTICSEARCH_HOST", raising=False)
     monkeypatch.delenv("OJIICHAN_ISSUE_BACKEND", raising=False)
     monkeypatch.delenv("ISSUE_BACKEND", raising=False)
+    # Disable vault disk cache so stale entries from other tests don't bleed in.
+    monkeypatch.setenv("OJIICHAN_VAULT_CACHE_DISABLE", "1")
     _reset_for_tests()
     result = default_issue_backend()
     assert result == "auto"
@@ -70,6 +72,8 @@ def test_default_issue_backend_explicit_env_overrides(
 def test_check_obachan_skip_when_no_host(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("ELASTICSEARCH_HOST", raising=False)
     monkeypatch.delenv("OJIICHAN_ELASTICSEARCH_HOST", raising=False)
+    # Disable vault disk cache so stale entries from other tests don't bleed in.
+    monkeypatch.setenv("OJIICHAN_VAULT_CACHE_DISABLE", "1")
     _reset_for_tests()
     result = check_obachan()
     assert result["status"] == "skip"

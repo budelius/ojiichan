@@ -13,6 +13,7 @@ from .bugsink import BugsinkClient, check_bugsink
 from .config import ISSUE_BACKENDS, RustrakConfig, ScalewayConfig, default_issue_backend
 from .credentials import get_secret
 from .elk import ElkClient, check_elk
+from .obachan_backend import ObachanLogsClient, check_obachan
 from .provision import (
     ElkProvisionConfig,
     ElkProvisioner,
@@ -56,6 +57,9 @@ def cmd_health(args: argparse.Namespace) -> int:
     if backend == "rustrak":
         issue_health = check_rustrak(hours=args.hours, top_n=args.top)
         issue_label = "Rustrak"
+    elif backend == "obachan":
+        issue_health = check_obachan(hours=args.hours, top_n=args.top)
+        issue_label = "OpenSearch/obachan"
     else:
         issue_health = check_bugsink(hours=args.hours, top_n=args.top)
         issue_label = "Bugsink/Sentry"
@@ -118,6 +122,36 @@ def cmd_health(args: argparse.Namespace) -> int:
 
 def cmd_logs(args: argparse.Namespace) -> int:
     backend = getattr(args, "backend", "elk")
+
+    if backend == "obachan":
+        # ObachanLogsClient.query_logs returns list[dict] rather than a tuple,
+        # so it is handled as a separate code path.
+        obachan_client = ObachanLogsClient()
+        label = "OpenSearch/obachan"
+        try:
+            entries_dict = obachan_client.query_logs(
+                hours=args.hours,
+                limit=args.limit,
+                topic=args.topic,
+                source=args.source,
+                failures_only=args.failures_only,
+            )
+        except RuntimeError as exc:
+            print(f"OpenSearch/obachan error: {exc}", file=sys.stderr)
+            return 1
+        total_obachan = len(entries_dict)
+        if args.json:
+            _print_json({"backend": backend, "total": total_obachan, "entries": entries_dict})
+        else:
+            print(f"{label} matches={total_obachan} showing={total_obachan}")
+            for entry in entries_dict:
+                print(
+                    f"  [{entry.get('timestamp')}] {str(entry.get('level', '?')):5s} "
+                    f"{str(entry.get('index', '?')):36s} "
+                    f"{entry.get('operation', '?')}: {entry.get('message', '')}"
+                )
+        return 0
+
     if backend == "scaleway":
         client: ElkClient | ScalewayLogsClient = ScalewayLogsClient()
         label = "Scaleway"
@@ -423,12 +457,13 @@ def build_parser() -> argparse.ArgumentParser:
     logs = sub.add_parser("logs", help="Query recent logs (ELK app events or Scaleway Cockpit)")
     logs.add_argument(
         "--backend",
-        choices=["elk", "scaleway"],
+        choices=["elk", "scaleway", "obachan"],
         default="elk",
         help=(
             "elk: structured app events from Elasticsearch (default). "
             "scaleway: runtime stdout/stderr from Scaleway Cockpit (Loki); "
-            "use --source <function-name> to scope to one Serverless Function."
+            "use --source <function-name> to scope to one Serverless Function. "
+            "obachan: log events from the obachan platform OpenSearch."
         ),
     )
     logs.add_argument("--hours", type=int, default=24)

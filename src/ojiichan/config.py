@@ -286,18 +286,25 @@ class ObachanBackendConfig:
         )
 
 
-ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink")
+ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink", "obachan")
 
 
 def default_issue_backend() -> str:
     """Return the project-declared issue backend, defaulting to ``auto``.
 
     Projects pick a backend by exporting ``OJIICHAN_ISSUE_BACKEND=rustrak`` (or
-    ``sentry`` / ``bugsink``). Unknown values fall back to ``auto`` so callers
-    can still try multiple backends.
+    ``sentry`` / ``bugsink`` / ``obachan``). When no explicit backend is declared,
+    prefers ``obachan`` if an OpenSearch URL is configured (ELASTICSEARCH_HOST
+    or OJIICHAN_ELASTICSEARCH_HOST), otherwise returns ``auto`` so callers can
+    fall back to their own heuristics (e.g. prefer Rustrak when a token exists).
     """
     value = (env("ISSUE_BACKEND") or "").strip().lower()
-    return value if value in ISSUE_BACKENDS else "auto"
+    if value in ISSUE_BACKENDS:
+        return value
+    # Auto-detect: obachan/OpenSearch is the preferred default when configured.
+    if ElkConfig.from_env().url is not None:
+        return "obachan"
+    return "auto"
 
 
 def parse_sentry_dsn(dsn: str) -> tuple[str | None, str | None]:
