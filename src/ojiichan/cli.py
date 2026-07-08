@@ -106,7 +106,9 @@ def cmd_health(args: argparse.Namespace) -> int:
         if "total_issues" in issue_health:
             print(
                 f"  issues total={issue_health['total_issues']} "
-                f"unresolved={issue_health['unresolved']} "
+                f"open={issue_health.get('open', issue_health['unresolved'])} "
+                f"resolved={issue_health.get('resolved', 0)} "
+                f"muted={issue_health.get('muted', 0)} "
                 f"recent={len(issue_health.get('recent_unresolved') or [])}"
             )
             for issue in issue_health.get("recent_unresolved") or []:

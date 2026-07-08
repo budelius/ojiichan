@@ -518,7 +518,7 @@ wheels = [
 
 [[package]]
 name = "ojiichan"
-version = "0.8.0"
+version = "0.9.1"
 source = { editable = "." }
 dependencies = [
     { name = "httpx" },

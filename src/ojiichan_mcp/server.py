@@ -331,15 +331,33 @@ def rustrak_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
 
 @mcp.tool()
 def rustrak_issues(
-    hours: int = 24, top: int = 10, project_id: str | None = None
+    hours: int = 24,
+    top: int = 10,
+    project_id: str | None = None,
+    filter: str = "open",
 ) -> dict[str, Any]:
-    """List recent unresolved Rustrak issues."""
-    issues = RustrakClient().recent_unresolved(
-        hours=_safe_limit(hours, default=24, maximum=24 * 30),
-        top_n=_safe_limit(top, default=10, maximum=100),
+    """List Rustrak issues with a UI-compatible filter: open, resolved, muted, or all."""
+    client = RustrakClient()
+    if filter == "open":
+        issues = client.recent_unresolved(
+            hours=_safe_limit(hours, default=24, maximum=24 * 30),
+            top_n=_safe_limit(top, default=10, maximum=100),
+            project_id=project_id,
+        )
+        return {"filter": filter, "issues": [issue.__dict__ for issue in issues]}
+
+    items = client.issues(
         project_id=project_id,
+        per_page=_safe_limit(top, default=10, maximum=100),
+        filter=filter,
     )
-    return {"issues": [issue.__dict__ for issue in issues]}
+    return {"filter": filter, "issues": items}
+
+
+@mcp.tool()
+def rustrak_issue_reference(issue_id: str, project_id: str | None = None) -> dict[str, Any]:
+    """Return copy/share references for agents: URL, rustrak:// ref, and Markdown link."""
+    return RustrakClient().issue_reference(issue_id, project_id=project_id)
 
 
 @mcp.tool()

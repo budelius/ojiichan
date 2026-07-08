@@ -361,7 +361,8 @@ Exposed tools:
 - `sentry_resolve_issue`
 - `rustrak_resolve_issue`
 - `rustrak_health`
-- `rustrak_issues`
+- `rustrak_issues` (supports `filter`: `open`, `resolved`, `muted`, `all`)
+- `rustrak_issue_reference` (copy/share URL, `rustrak://` ref, and Markdown link)
 - `scaffold_observability` (renders TypeScript/Rust setup files)
 - `provision_project` (one-shot: all backends from just a project name; dry-run by default)
 - `provision_elk` / `provision_rustrak` / `provision_otel` (dry-run by default; `apply=True` mutates + writes Vault)

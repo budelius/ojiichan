@@ -5,7 +5,7 @@ from ojiichan.bugsink import BugsinkClient
 from ojiichan.config import BugsinkConfig, RustrakConfig, SentryApiConfig
 from ojiichan.rustrak import RustrakClient
 from ojiichan.sentry import SentryApiClient
-from ojiichan_mcp.server import mcp
+from ojiichan_mcp.server import mcp, rustrak_issue_reference, rustrak_issues
 
 
 def test_ojiichan_import() -> None:
@@ -146,6 +146,44 @@ def test_health_routes_to_rustrak_when_backend_selected(monkeypatch) -> None:
     assert captured["bugsink"] is False
 
 
+def test_rustrak_issue_reference() -> None:
+    client = RustrakClient(
+        RustrakConfig(
+            api_token=None,
+            base_url="https://ingest.rustrak.example",
+            project_id="42",
+        )
+    )
+
+    ref = client.issue_reference("abc")
+
+    assert ref["url"] == "https://rustrak.example/projects/42/issues/abc"
+    assert ref["ref"] == "rustrak://projects/42/issues/abc"
+    assert ref["markdown"] == "[Rustrak issue abc](https://rustrak.example/projects/42/issues/abc)"
+
+
+def test_mcp_rustrak_filter_and_reference(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    class FakeClient:
+        def issues(self, **kwargs):
+            calls["issues"] = kwargs
+            return [{"id": "abc", "state": "resolved"}]
+
+        def issue_reference(self, issue_id, project_id=None):
+            calls["reference"] = {"issue_id": issue_id, "project_id": project_id}
+            return {"ref": f"rustrak://projects/{project_id}/issues/{issue_id}"}
+
+    monkeypatch.setattr("ojiichan_mcp.server.RustrakClient", FakeClient)
+
+    listed = rustrak_issues(filter="resolved", top=2, project_id="42")
+    shared = rustrak_issue_reference("abc", project_id="42")
+
+    assert calls["issues"] == {"project_id": "42", "per_page": 2, "filter": "resolved"}
+    assert listed == {"filter": "resolved", "issues": [{"id": "abc", "state": "resolved"}]}
+    assert shared == {"ref": "rustrak://projects/42/issues/abc"}
+
+
 def test_rustrak_resolve_issue(monkeypatch) -> None:
     calls = []
 
@@ -222,6 +260,7 @@ def test_mcp_server_exposes_expected_tools() -> None:
         "rustrak_resolve_issue",
         "rustrak_health",
         "rustrak_issues",
+        "rustrak_issue_reference",
         "create_bead_from_issue",
         "xcode_build",
         "xcode_test",

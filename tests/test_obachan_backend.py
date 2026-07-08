@@ -17,7 +17,6 @@ from ojiichan.credentials import _reset_for_tests
 from ojiichan.elk import ElkLogEntry
 from ojiichan.obachan_backend import ObachanLogsClient, check_obachan
 
-
 # ---------------------------------------------------------------------------
 # ISSUE_BACKENDS / default_issue_backend
 # ---------------------------------------------------------------------------
