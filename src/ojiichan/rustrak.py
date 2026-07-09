@@ -8,6 +8,7 @@ issue reads and resolution; ingestion still happens via the regular
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -31,6 +32,14 @@ class RustrakIssue:
 
 
 VALID_ISSUE_FILTERS = {"open", "resolved", "muted", "all"}
+ISSUE_COUNT_FILTERS = ("open", "resolved", "muted", "all")
+
+
+def _as_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 class RustrakClient:
@@ -78,6 +87,46 @@ class RustrakClient:
         data = response.json()
         return data if isinstance(data, dict) else {"items": []}
 
+    def project_page(
+        self,
+        *,
+        page: int = 1,
+        per_page: int = 100,
+        order: str = "desc",
+    ) -> dict[str, Any]:
+        if not self.config.api_token:
+            raise RuntimeError("RUSTRAK_API_TOKEN is required to query Rustrak projects")
+
+        url = f"{self.config.base_url}/api/projects"
+        response = httpx.get(
+            url,
+            params={
+                "page": max(page, 1),
+                "per_page": min(max(per_page, 1), 100),
+                "order": order,
+            },
+            headers={"Authorization": f"Bearer {self.config.api_token}"},
+            timeout=self.config.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data if isinstance(data, dict) else {"items": []}
+
+    def projects(self, *, per_page: int = 100, order: str = "desc") -> list[dict[str, Any]]:
+        items: list[dict[str, Any]] = []
+        page = 1
+        while True:
+            data = self.project_page(page=page, per_page=per_page, order=order)
+            page_items = data.get("items") or []
+            if isinstance(page_items, list):
+                items.extend(item for item in page_items if isinstance(item, dict))
+
+            total_pages = max(_as_int(data.get("total_pages")) or page, page)
+            if page >= total_pages:
+                break
+            page += 1
+        return items
+
     def issues(
         self,
         *,
@@ -123,7 +172,7 @@ class RustrakClient:
 
     def issue_counts(self, *, project_id: str | int | None = None) -> dict[str, int]:
         counts: dict[str, int] = {}
-        for issue_filter in ("open", "resolved", "muted", "all"):
+        for issue_filter in ISSUE_COUNT_FILTERS:
             page = self.issue_page(project_id=project_id, per_page=1, filter=issue_filter)
             total = page.get("total_count")
             counts[issue_filter] = int(total) if total is not None else len(page.get("items") or [])
@@ -151,6 +200,82 @@ class RustrakClient:
             "url": url,
             "ref": ref,
             "markdown": markdown,
+        }
+
+    def project_stats(self, project: dict[str, Any] | str | int) -> dict[str, Any]:
+        if isinstance(project, dict):
+            project_id = project.get("id")
+            if project_id is None:
+                raise ValueError("Rustrak project payload is missing id")
+            pid = str(project_id)
+            name = str(project.get("name") or project.get("slug") or pid)
+            slug = project.get("slug")
+            stored_events = _as_int(project.get("stored_event_count"))
+            digested_events = _as_int(project.get("digested_event_count"))
+        else:
+            pid = str(project)
+            name = pid
+            slug = None
+            stored_events = 0
+            digested_events = 0
+
+        counts = self.issue_counts(project_id=pid)
+        return {
+            "id": pid,
+            "name": name,
+            "slug": slug,
+            "ui_url": self._ui_root(pid) or None,
+            "errors_total": counts.get("all", 0),
+            "open_errors": counts.get("open", 0),
+            "resolved_errors": counts.get("resolved", 0),
+            "muted_errors": counts.get("muted", 0),
+            "issues": counts,
+            "events": {
+                "stored": stored_events,
+                "digested": digested_events,
+            },
+        }
+
+    def dashboard(
+        self, *, project_ids: Sequence[str | int] | None = None
+    ) -> dict[str, Any]:
+        if project_ids:
+            projects: list[dict[str, Any] | str | int] = list(project_ids)
+        else:
+            projects = self.projects()
+            if not projects and self.config.project_id:
+                projects = [self.config.project_id]
+
+        project_rows = [self.project_stats(project) for project in projects]
+        project_rows.sort(
+            key=lambda project: (
+                -project["open_errors"],
+                -project["errors_total"],
+                project["name"],
+            )
+        )
+
+        issue_totals = {
+            key: sum(int(project["issues"].get(key, 0)) for project in project_rows)
+            for key in ISSUE_COUNT_FILTERS
+        }
+        event_totals = {
+            "stored": sum(int(project["events"].get("stored", 0)) for project in project_rows),
+            "digested": sum(int(project["events"].get("digested", 0)) for project in project_rows),
+        }
+        return {
+            "backend": "rustrak",
+            "base_url": self.config.base_url,
+            "project_count": len(project_rows),
+            "totals": {
+                "errors_total": issue_totals["all"],
+                "open_errors": issue_totals["open"],
+                "resolved_errors": issue_totals["resolved"],
+                "muted_errors": issue_totals["muted"],
+                "issues": issue_totals,
+                "events": event_totals,
+            },
+            "projects": project_rows,
         }
 
     def recent_unresolved(
@@ -257,3 +382,40 @@ def check_rustrak(
         out["status"] = "warn"
         out["message"] = f"{len(recent)} unresolved issue(s) with activity in last {hours}h."
     return out
+
+
+def rustrak_dashboard(
+    *,
+    project_ids: Sequence[str | int] | None = None,
+    config: RustrakConfig | None = None,
+) -> dict[str, Any]:
+    cfg = config or RustrakConfig.from_env()
+    out: dict[str, Any] = {"status": "ok", "backend": "rustrak", "base_url": cfg.base_url}
+    if not cfg.api_token:
+        return {
+            **out,
+            "status": "warn",
+            "message": "RUSTRAK_API_TOKEN not set; cannot query Rustrak dashboard.",
+        }
+
+    client = RustrakClient(cfg)
+    try:
+        data = client.dashboard(project_ids=project_ids)
+    except Exception as exc:
+        if project_ids or not cfg.project_id:
+            return {**out, "status": "warn", "message": f"Rustrak dashboard query failed: {exc}"}
+        try:
+            data = client.dashboard(project_ids=[cfg.project_id])
+        except Exception as fallback_exc:
+            return {
+                **out,
+                "status": "warn",
+                "message": (
+                    "Rustrak dashboard query failed: "
+                    f"{exc}; configured-project fallback failed: {fallback_exc}"
+                ),
+            }
+        notes = list(data.get("notes") or [])
+        notes.append(f"project list failed ({exc}); used configured RUSTRAK_PROJECT_ID")
+        data["notes"] = notes
+    return {**out, **data, "status": "ok"}

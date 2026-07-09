@@ -17,6 +17,7 @@ def _isolated_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv(credentials.VAULT_CACHE_DISABLE_ENV, raising=False)
     monkeypatch.delenv(credentials.VAULT_CACHE_TTL_ENV, raising=False)
     monkeypatch.delenv(credentials.VAULT_FOLDER_ENV, raising=False)
+    monkeypatch.delenv(credentials.VAULT_PROJECT_ENV, raising=False)
     for env_var in credentials.SECRET_MAP:
         monkeypatch.delenv(env_var, raising=False)
     credentials._reset_for_tests()
@@ -76,6 +77,20 @@ def test_warm_populates_all_known_secrets_in_one_call(monkeypatch: pytest.Monkey
     assert credentials.get_secret("SENTRY_DSN") is None
 
     assert fake.list_calls == 1
+
+
+def test_project_vault_scope_overrides_shared_secrets(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake = FakeVaultClient(
+        {
+            "ojiichan/elk/password": "shared-pw",
+            "ojiichan/projects/ios-writer/elk/password": "ios-pw",
+        }
+    )
+    _install_fake_locke(monkeypatch, fake)
+    monkeypatch.setenv(credentials.VAULT_PROJECT_ENV, "ios-writer")
+
+    assert credentials.get_secret("ELASTICSEARCH_PASSWORD") == "ios-pw"
+    assert fake.list_calls == 2
 
 
 def test_disk_cache_is_reused_across_process_restarts(monkeypatch: pytest.MonkeyPatch) -> None:

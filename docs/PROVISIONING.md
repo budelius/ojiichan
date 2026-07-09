@@ -129,6 +129,10 @@ The inverse of `credentials.py`. Key invariant: **writes land where reads look.*
 - `secret_path(env_var)` resolves through the same `credentials.SECRET_MAP`
   (`ELASTICSEARCH_PASSWORD` → `<folder>/elk/password`, etc.). Unknown vars fall
   back to `<folder>/<env_var>`.
+- Provisioned service credentials are written under
+  `<folder>/projects/<project>/<secret_name>` so onboarding another service does
+  not overwrite them. Runtime services opt in with
+  `OJIICHAN_VAULT_PROJECT=<project>`; reads fall back to shared platform paths.
 - `store_secret(env_var, value, ...)` / `store_secrets(mapping)` call Locke's
   `VaultClient.set_secret(path, value, ...)` (create-or-update).
 - No `vault` extra installed → returns `"unavailable"` (provision still completes
@@ -178,7 +182,8 @@ ojiichan provision all --project m3rp-api \
       resolve from `--flag`→env→Vault; missing backends skip (not fail).
 - [x] `provision elk|rustrak|otel` parse and dispatch; `--dry-run` mutates nothing.
 - [x] ELK resources match obachan's configmap names/shapes; all idempotent PUTs.
-- [x] Vault write-path stores at `SECRET_MAP` paths; password not desynced on re-run.
+- [x] Vault write-path stores project creds at project-scoped `SECRET_MAP` paths;
+      password not desynced on re-run.
 - [x] `--no-vault` and missing-`vault`-extra both degrade gracefully.
 - [x] MCP `provision_*` default to dry-run.
 - [x] `ruff check .` clean; `pytest tests/test_provision.py` green.

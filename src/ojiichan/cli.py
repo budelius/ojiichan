@@ -24,7 +24,7 @@ from .provision import (
     provision_all,
 )
 from .provision.base import ProvisionResult
-from .rustrak import RustrakClient, check_rustrak
+from .rustrak import RustrakClient, check_rustrak, rustrak_dashboard
 from .scaffold import available_languages, scaffold
 from .scaleway import ScalewayLogsClient, check_scaleway
 from .sentry import SentryApiClient
@@ -120,6 +120,55 @@ def cmd_health(args: argparse.Namespace) -> int:
     if scaleway_health is not None:
         statuses.add(scaleway_health["status"])
     return 1 if "fail" in statuses else 0
+
+
+def cmd_dashboard(args: argparse.Namespace) -> int:
+    payload = rustrak_dashboard(project_ids=args.project_id or None)
+    if args.json:
+        _print_json(payload)
+        return 0 if payload["status"] == "ok" else 1
+
+    print("Ojiichan error dashboard backend=rustrak\n")
+    print(f"{_status_glyph(payload['status'])} Rustrak")
+    if payload["status"] != "ok":
+        if payload.get("message"):
+            print(f"  {payload['message']}")
+        return 1
+
+    totals = payload["totals"]
+    issues = totals["issues"]
+    events = totals["events"]
+    print(
+        f"  errors total={totals['errors_total']} "
+        f"open={issues.get('open', 0)} "
+        f"resolved={issues.get('resolved', 0)} "
+        f"muted={issues.get('muted', 0)} "
+        f"projects={payload['project_count']}"
+    )
+    print(f"  events stored={events.get('stored', 0)} digested={events.get('digested', 0)}")
+
+    projects = payload.get("projects") or []
+    limit = max(args.limit, 0)
+    visible = projects if limit == 0 else projects[:limit]
+    for project in visible:
+        project_issues = project["issues"]
+        project_events = project["events"]
+        print(
+            f"  - {project['name']} ({project['id']}): "
+            f"errors total={project['errors_total']} "
+            f"open={project_issues.get('open', 0)} "
+            f"resolved={project_issues.get('resolved', 0)} "
+            f"muted={project_issues.get('muted', 0)} "
+            f"events={project_events.get('stored', 0)}"
+        )
+        if project.get("ui_url"):
+            print(f"    triage: {project['ui_url']}")
+    hidden = len(projects) - len(visible)
+    if hidden > 0:
+        print(f"  ... {hidden} more project(s); use --json for full output")
+    for note in payload.get("notes") or []:
+        print(f"  note: {note}")
+    return 0
 
 
 def cmd_logs(args: argparse.Namespace) -> int:
@@ -455,6 +504,21 @@ def build_parser() -> argparse.ArgumentParser:
     health.add_argument("--top", type=int, default=5)
     health.add_argument("--json", action="store_true")
     health.set_defaults(func=cmd_health)
+
+    dashboard = sub.add_parser("dashboard", help="Show Rustrak error totals by project")
+    dashboard.add_argument(
+        "--project-id",
+        action="append",
+        help="Restrict to a Rustrak project id; repeat to include multiple projects",
+    )
+    dashboard.add_argument(
+        "--limit",
+        type=int,
+        default=20,
+        help="Maximum projects to show in text output (0 shows all)",
+    )
+    dashboard.add_argument("--json", action="store_true")
+    dashboard.set_defaults(func=cmd_dashboard)
 
     logs = sub.add_parser("logs", help="Query recent logs (ELK app events or Scaleway Cockpit)")
     logs.add_argument(

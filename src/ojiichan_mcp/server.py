@@ -31,6 +31,7 @@ from ojiichan.provision import (
     provision_all,
 )
 from ojiichan.rustrak import RustrakClient, check_rustrak
+from ojiichan.rustrak import rustrak_dashboard as build_rustrak_dashboard
 from ojiichan.scaffold import available_languages, render_files
 from ojiichan.scaleway import ScalewayLogsClient, check_scaleway
 from ojiichan.sentry import SentryApiClient
@@ -327,6 +328,12 @@ def sentry_resolve_issue(issue_id: str) -> dict[str, Any]:
 def rustrak_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
     """Check Rustrak configuration and unresolved recent issue activity."""
     return check_rustrak(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+
+
+@mcp.tool()
+def rustrak_dashboard(project_ids: list[str] | None = None) -> dict[str, Any]:
+    """Show aggregate Rustrak error totals and per-project error stats."""
+    return build_rustrak_dashboard(project_ids=project_ids)
 
 
 @mcp.tool()

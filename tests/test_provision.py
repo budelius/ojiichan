@@ -60,6 +60,10 @@ def test_run_steps_stops_on_failure():
 def test_secret_path_uses_secret_map(monkeypatch):
     monkeypatch.delenv("OJIICHAN_VAULT_FOLDER", raising=False)
     assert vault_write.secret_path("ELASTICSEARCH_PASSWORD") == "ojiichan/elk/password"
+    assert (
+        vault_write.secret_path("ELASTICSEARCH_PASSWORD", project="ios-writer")
+        == "ojiichan/projects/ios-writer/elk/password"
+    )
     # unknown env var falls back to a literal sub-path
     assert vault_write.secret_path("SOMETHING_NEW") == "ojiichan/SOMETHING_NEW"
 
@@ -80,9 +84,11 @@ def test_store_secrets_writes_via_client(monkeypatch):
 
     monkeypatch.setattr(vault_write, "connect", lambda: FakeClient())
     monkeypatch.delenv("OJIICHAN_VAULT_FOLDER", raising=False)
-    out = vault_write.store_secrets({"ELASTICSEARCH_PASSWORD": "pw", "RUSTRAK_API_TOKEN": None})
+    out = vault_write.store_secrets(
+        {"ELASTICSEARCH_PASSWORD": "pw", "RUSTRAK_API_TOKEN": None}, project="ios-writer"
+    )
     assert out == {"ELASTICSEARCH_PASSWORD": "created", "RUSTRAK_API_TOKEN": "skipped"}
-    assert written == {"ojiichan/elk/password": "pw"}
+    assert written == {"ojiichan/projects/ios-writer/elk/password": "pw"}
 
 
 # --- ELK provisioner --------------------------------------------------------
@@ -136,7 +142,7 @@ def test_elk_apply_creates_and_writes_vault(monkeypatch):
     assert any("_index_template/m3rp-api-logs" in p for p in captured)
     assert any("internalusers/m3rp-api-writer" in p for p in captured)
     # explicit scoped password is persisted alongside host/user/prefix
-    assert stored["ojiichan/elk/password"] == "fixed-pw"
+    assert stored["ojiichan/projects/m3rp-api/elk/password"] == "fixed-pw"
     assert set(result.secrets_written) == {
         "ELASTICSEARCH_HOST",
         "ELASTICSEARCH_USERNAME",

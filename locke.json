@@ -5,7 +5,7 @@
   "keys": {
     "_comment": "Ojiichan credential registry. Secret values live in Locke/Vaultwarden, not in sample env files.",
     "vault": {
-      "_comment": "Path format: {project}/{tenant}/{name}. Ojiichan also supports OJIICHAN_VAULT_FOLDER to override the folder prefix.",
+      "_comment": "Path format: {project}/{tenant}/{name}. Ojiichan supports OJIICHAN_VAULT_FOLDER and project-scoped runtime creds under ojiichan/projects/<service>/... selected by OJIICHAN_VAULT_PROJECT.",
       "ojiichan/elasticsearch-host": "Elasticsearch host or base URL",
       "ojiichan/elasticsearch-username": "Elasticsearch username",
       "ojiichan/elasticsearch-password": "Elasticsearch password",
@@ -32,11 +32,20 @@
       "ojiichan/elk/index-prefix": "Project index prefix (written by `ojiichan provision elk`)",
       "ojiichan/rustrak/api-token": "Rustrak API token (written by `ojiichan provision rustrak`)",
       "ojiichan/otel/exporter-endpoint": "OTLP exporter endpoint (written by `ojiichan provision otel`)",
-      "ojiichan/otel/exporter-headers": "OTLP exporter headers, may carry a bearer token (written by `ojiichan provision otel`)"
+      "ojiichan/otel/exporter-headers": "OTLP exporter headers, may carry a bearer token (written by `ojiichan provision otel`)",
+      "ojiichan/projects/<service>/elk/host": "Project-scoped OpenSearch/ELK host written by `ojiichan provision elk --project <service>`",
+      "ojiichan/projects/<service>/elk/username": "Project-scoped OpenSearch writer username",
+      "ojiichan/projects/<service>/elk/password": "Project-scoped OpenSearch writer password",
+      "ojiichan/projects/<service>/elk/index-prefix": "Project-scoped OpenSearch index prefix",
+      "ojiichan/projects/<service>/rustrak/api-token": "Project-scoped Rustrak API token",
+      "ojiichan/projects/<service>/sentry-dsn": "Project-scoped Sentry/Rustrak ingest DSN",
+      "ojiichan/projects/<service>/otel/exporter-endpoint": "Project-scoped OTLP exporter endpoint",
+      "ojiichan/projects/<service>/otel/exporter-headers": "Project-scoped OTLP exporter headers"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",
       "OJIICHAN_VAULT_FOLDER": "Optional Vaultwarden folder prefix; defaults to ojiichan",
+      "OJIICHAN_VAULT_PROJECT": "Optional service namespace; reads ojiichan/projects/<service>/... before shared paths",
       "OJIICHAN_ISSUE_BACKEND": "Project-declared issue backend: rustrak | sentry | bugsink. Bugsink resolve is not supported.",
       "ELASTICSEARCH_PORT": "Elasticsearch port; defaults to 443",
       "ELASTICSEARCH_USE_SSL": "true/false; defaults to true",

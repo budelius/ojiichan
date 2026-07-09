@@ -31,7 +31,11 @@ uv sync
 Ojiichan resolves explicit environment variables first, then Locke/Vaultwarden secrets when installed with the `vault` extra. The checked-in `locke.json` documents the expected Vaultwarden paths; no sample env file with secret-shaped values is needed.
 
 Default vault folder: `ojiichan`.
-Override it with `OJIICHAN_VAULT_FOLDER` when needed.
+Override it with `OJIICHAN_VAULT_FOLDER` when needed. Set
+`OJIICHAN_VAULT_PROJECT=<service>` in a service to read project-scoped
+credentials from `ojiichan/projects/<service>/...` first, falling back to shared
+platform credentials. `ojiichan provision --project <service>` writes generated
+service creds to that scoped namespace.
 
 To minimise Vaultwarden rate-limit pressure, all known secrets are warmed in one `list_secrets` call per process and snapshotted to a `0600` file under `${XDG_CACHE_HOME:-~/.cache}/ojiichan/`. Knobs:
 
@@ -67,6 +71,8 @@ in the scaffolded TypeScript/Rust/Swift services.
 
 ```bash
 ojiichan health --hours 6
+ojiichan dashboard --limit 10
+ojiichan dashboard --project-id 42 --json
 ojiichan logs --hours 2 --topic matrix --failures-only
 ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
@@ -82,6 +88,15 @@ ojiichan scaffold --lang swift --dir ../some-ios-app    # iOS/macOS, server-side
 ojiichan logs --backend scaleway --hours 2 --failures-only
 ojiichan logs --backend scaleway --source m3rp-api-staging-api --topic "Login failed"
 ```
+
+### Error dashboard
+
+`ojiichan dashboard` summarizes Rustrak error stats across projects. It lists
+total/open/resolved/muted error counts, stored/digested event totals from the
+Rustrak project list, and per-project rows sorted by currently open errors.
+
+Use `--project-id` to restrict the report to one or more project IDs, `--limit`
+to trim text output, and `--json` for the full machine-readable payload.
 
 ### Scaleway Cockpit logs
 
@@ -361,6 +376,7 @@ Exposed tools:
 - `sentry_resolve_issue`
 - `rustrak_resolve_issue`
 - `rustrak_health`
+- `rustrak_dashboard` (aggregate Rustrak error totals and per-project stats)
 - `rustrak_issues` (supports `filter`: `open`, `resolved`, `muted`, `all`)
 - `rustrak_issue_reference` (copy/share URL, `rustrak://` ref, and Markdown link)
 - `scaffold_observability` (renders TypeScript/Rust setup files)

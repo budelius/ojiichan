@@ -34,15 +34,15 @@ VAULT_CACHE_TTL_ENV = "OJIICHAN_VAULT_CACHE_TTL"
 DEFAULT_VAULT_CACHE_TTL = 300  # seconds
 VAULT_CACHE_DISABLE_ENV = "OJIICHAN_VAULT_CACHE_DISABLE"
 VAULT_CACHE_PATH_ENV = "OJIICHAN_VAULT_CACHE_PATH"
+VAULT_PROJECT_ENV = "OJIICHAN_VAULT_PROJECT"
 
-# Env var name -> vault secret name. The full vault path is
-# ``{OJIICHAN_VAULT_FOLDER or ojiichan}/{secret_name}``.
-#
-# ELK and Rustrak credentials live under shared ``elk/`` and ``rustrak/``
-# sub-namespaces (e.g. ``ojiichan/elk/password``, ``ojiichan/rustrak/api-token``)
-# so they are reused across all ojiichan-monitored projects rather than
-# duplicated per project. Override the folder with OJIICHAN_VAULT_FOLDER only
-# when a project genuinely needs its own credentials.
+# Env var name -> vault secret name. By default the full vault path is
+# ``{OJIICHAN_VAULT_FOLDER or ojiichan}/{secret_name}``. When
+# ``OJIICHAN_VAULT_PROJECT`` is set, reads check
+# ``{folder}/projects/{project}/{secret_name}`` first, then fall back to the
+# shared path. Provisioning writes project credentials to that project-scoped
+# path so onboarding one service does not overwrite another service's writer
+# creds.
 SECRET_MAP: dict[str, str] = {
     "ELASTICSEARCH_HOST": "elk/host",
     "ELASTICSEARCH_USERNAME": "elk/username",
@@ -89,6 +89,20 @@ def vault_folder() -> str:
     return os.getenv(VAULT_FOLDER_ENV, DEFAULT_VAULT_FOLDER).strip("/")
 
 
+def vault_project() -> str | None:
+    """Return the optional project-scoped vault namespace."""
+    project = os.getenv(VAULT_PROJECT_ENV)
+    return project.strip("/") if project else None
+
+
+def vault_project_folder(project: str | None = None) -> str | None:
+    """Return ``<folder>/projects/<project>`` for scoped project credentials."""
+    scoped = (project or vault_project() or "").strip("/")
+    if not scoped:
+        return None
+    return f"{vault_folder()}/projects/{scoped}"
+
+
 def _disk_cache_enabled() -> bool:
     return not os.getenv(VAULT_CACHE_DISABLE_ENV)
 
@@ -110,7 +124,11 @@ def _disk_cache_path() -> Path:
     if override:
         return Path(override)
     base = os.getenv("XDG_CACHE_HOME") or str(Path.home() / ".cache")
-    return Path(base) / "ojiichan" / f"vault-{vault_folder()}.json"
+    suffix = vault_folder().replace("/", "-")
+    project = vault_project()
+    if project:
+        suffix = f"{suffix}-project-{project.replace('/', '-')}"
+    return Path(base) / "ojiichan" / f"vault-{suffix}.json"
 
 
 def _load_disk_cache() -> dict[str, str] | None:
@@ -205,16 +223,22 @@ def _warm_from_locke() -> None:
     client = _get_client()
     if client is None:
         return
-    prefix = f"{vault_folder()}/"
-    try:
-        secrets = client.list_secrets(prefix)
-    except Exception as exc:  # noqa: BLE001 - credential backends are best-effort.
-        logger.debug("failed to list secrets from Locke/Vaultwarden: %s", exc)
-        return
+
     cleaned: dict[str, str] = {}
-    for path, value in secrets.items():
-        if isinstance(path, str) and path.startswith(prefix) and isinstance(value, str):
-            cleaned[path[len(prefix):]] = value
+    prefixes = [f"{vault_folder()}/"]
+    project_folder = vault_project_folder()
+    if project_folder:
+        prefixes.append(f"{project_folder}/")
+
+    for prefix in prefixes:
+        try:
+            secrets = client.list_secrets(prefix)
+        except Exception as exc:  # noqa: BLE001 - credential backends are best-effort.
+            logger.debug("failed to list secrets from Locke/Vaultwarden: %s", exc)
+            continue
+        for path, value in secrets.items():
+            if isinstance(path, str) and path.startswith(prefix) and isinstance(value, str):
+                cleaned[path[len(prefix):]] = value
     _apply_snapshot(cleaned)
     _save_disk_cache(cleaned)
 

@@ -91,7 +91,8 @@ class OtelProvisioner:
             {
                 "OTEL_EXPORTER_OTLP_ENDPOINT": self.c.endpoint,
                 "OTEL_EXPORTER_OTLP_HEADERS": self.c.headers,
-            }
+            },
+            project=self.c.project,
         )
         result.secrets_written = [
             env for env, action in written.items() if action in {"created", "updated"}

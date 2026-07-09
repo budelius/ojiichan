@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+
 from ojiichan import ElkClient, diagnostic, get_diagnostic, parse_annotation
 from ojiichan.bugsink import BugsinkClient
 from ojiichan.config import BugsinkConfig, RustrakConfig, SentryApiConfig
 from ojiichan.rustrak import RustrakClient
+from ojiichan.rustrak import rustrak_dashboard as build_rustrak_dashboard
 from ojiichan.sentry import SentryApiClient
-from ojiichan_mcp.server import mcp, rustrak_issue_reference, rustrak_issues
+from ojiichan_mcp.server import mcp, rustrak_dashboard, rustrak_issue_reference, rustrak_issues
 
 
 def test_ojiichan_import() -> None:
@@ -114,6 +117,91 @@ def test_rustrak_list_recent_issues(monkeypatch) -> None:
     assert only.url.startswith("https://rustrak.example/projects/42/issues/")
 
 
+def test_rustrak_dashboard_counts_all_projects(monkeypatch) -> None:
+    calls = []
+
+    class Response:
+        content = b"{}"
+
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict[str, object]:
+            return self.payload
+
+    totals = {
+        ("42", "open"): 2,
+        ("42", "resolved"): 1,
+        ("42", "muted"): 0,
+        ("42", "all"): 3,
+        ("7", "open"): 1,
+        ("7", "resolved"): 0,
+        ("7", "muted"): 1,
+        ("7", "all"): 2,
+    }
+
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs))
+        if url.endswith("/api/projects"):
+            return Response(
+                {
+                    "items": [
+                        {
+                            "id": 42,
+                            "name": "alpha-api",
+                            "slug": "alpha-api",
+                            "stored_event_count": 10,
+                            "digested_event_count": 8,
+                        },
+                        {
+                            "id": 7,
+                            "name": "beta-worker",
+                            "slug": "beta-worker",
+                            "stored_event_count": 3,
+                            "digested_event_count": 3,
+                        },
+                    ],
+                    "total_count": 2,
+                    "page": 1,
+                    "per_page": 100,
+                    "total_pages": 1,
+                }
+            )
+        project_id = url.split("/api/projects/", 1)[1].split("/issues", 1)[0]
+        issue_filter = kwargs["params"]["filter"]
+        return Response({"items": [], "total_count": totals[(project_id, issue_filter)]})
+
+    monkeypatch.setattr("ojiichan.rustrak.httpx.get", fake_get)
+    client = RustrakClient(
+        RustrakConfig(
+            api_token="token",
+            base_url="https://ingest.rustrak.example",
+            project_id="42",
+        )
+    )
+
+    dashboard = client.dashboard()
+
+    assert calls[0][0] == "https://ingest.rustrak.example/api/projects"
+    assert calls[0][1]["headers"] == {"Authorization": "Bearer token"}
+    assert dashboard["project_count"] == 2
+    assert dashboard["totals"]["errors_total"] == 5
+    assert dashboard["totals"]["open_errors"] == 3
+    assert dashboard["totals"]["events"] == {"stored": 13, "digested": 11}
+    assert dashboard["projects"][0]["id"] == "42"
+    assert dashboard["projects"][0]["ui_url"] == "https://rustrak.example/projects/42"
+
+
+def test_rustrak_dashboard_warns_without_token() -> None:
+    dashboard = build_rustrak_dashboard(config=RustrakConfig(api_token=None))
+
+    assert dashboard["status"] == "warn"
+    assert "RUSTRAK_API_TOKEN" in dashboard["message"]
+
+
 def test_health_routes_to_rustrak_when_backend_selected(monkeypatch) -> None:
     from ojiichan import cli as cli_mod
 
@@ -182,6 +270,43 @@ def test_mcp_rustrak_filter_and_reference(monkeypatch) -> None:
     assert calls["issues"] == {"project_id": "42", "per_page": 2, "filter": "resolved"}
     assert listed == {"filter": "resolved", "issues": [{"id": "abc", "state": "resolved"}]}
     assert shared == {"ref": "rustrak://projects/42/issues/abc"}
+
+
+def test_mcp_rustrak_dashboard(monkeypatch) -> None:
+    def fake_dashboard(**kwargs):
+        return {"status": "ok", "project_ids": kwargs["project_ids"]}
+
+    monkeypatch.setattr("ojiichan_mcp.server.build_rustrak_dashboard", fake_dashboard)
+
+    assert rustrak_dashboard(project_ids=["42"]) == {"status": "ok", "project_ids": ["42"]}
+
+
+def test_cli_dashboard_json(monkeypatch, capsys) -> None:
+    from ojiichan import cli as cli_mod
+
+    def fake_dashboard(**kwargs):
+        assert kwargs["project_ids"] == ["42"]
+        return {
+            "status": "ok",
+            "backend": "rustrak",
+            "project_count": 1,
+            "totals": {
+                "errors_total": 3,
+                "open_errors": 2,
+                "issues": {"open": 2, "resolved": 1, "muted": 0, "all": 3},
+                "events": {"stored": 10, "digested": 8},
+            },
+            "projects": [],
+        }
+
+    monkeypatch.setattr(cli_mod, "rustrak_dashboard", fake_dashboard)
+    parser = cli_mod.build_parser()
+    args = parser.parse_args(["dashboard", "--json", "--project-id", "42"])
+
+    assert cli_mod.cmd_dashboard(args) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["project_count"] == 1
+    assert payload["totals"]["errors_total"] == 3
 
 
 def test_rustrak_resolve_issue(monkeypatch) -> None:
@@ -259,6 +384,7 @@ def test_mcp_server_exposes_expected_tools() -> None:
         "sentry_resolve_issue",
         "rustrak_resolve_issue",
         "rustrak_health",
+        "rustrak_dashboard",
         "rustrak_issues",
         "rustrak_issue_reference",
         "create_bead_from_issue",

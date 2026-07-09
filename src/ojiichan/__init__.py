@@ -22,7 +22,7 @@ from .provision import (
     RustrakProvisionConfig,
     RustrakProvisioner,
 )
-from .rustrak import RustrakClient, RustrakIssue, check_rustrak
+from .rustrak import RustrakClient, RustrakIssue, check_rustrak, rustrak_dashboard
 from .scaffold import ScaffoldResult, available_languages, render_files, scaffold
 from .scaleway import ScalewayLogEntry, ScalewayLogsClient, check_scaleway, query_scaleway_logs
 from .sentry import SentryApiClient, capture_exception, init_sentry
@@ -63,5 +63,6 @@ __all__ = [
     "query_elk_logs",
     "query_scaleway_logs",
     "render_files",
+    "rustrak_dashboard",
     "scaffold",
 ]

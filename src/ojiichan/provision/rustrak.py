@@ -144,7 +144,8 @@ class RustrakProvisioner:
                 "SENTRY_DSN": self.dsn,
                 "RUSTRAK_API_TOKEN": self.api_token,
                 "RUSTRAK_PROJECT_ID": self.project_id,
-            }
+            },
+            project=self.c.project,
         )
         result.secrets_written = [
             env for env, action in written.items() if action in {"created", "updated"}

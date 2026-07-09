@@ -228,7 +228,7 @@ class ElkProvisioner:
                 "ELASTICSEARCH_PASSWORD left unchanged (pass --scoped-password to rotate)"
             )
 
-        written = vault_write.store_secrets(to_store)
+        written = vault_write.store_secrets(to_store, project=self.c.project)
         result.secrets_written = [
             env for env, action in written.items() if action in {"created", "updated"}
         ]

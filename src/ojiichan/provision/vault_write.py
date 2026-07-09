@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..credentials import SECRET_MAP, vault_folder
+from ..credentials import SECRET_MAP, vault_folder, vault_project_folder
 
 logger = logging.getLogger(__name__)
 
@@ -49,16 +49,18 @@ def connect() -> Any | None:
         return None
 
 
-def secret_path(env_var: str) -> str:
+def secret_path(env_var: str, *, project: str | None = None) -> str:
     """Map an env-var name to its full vault path.
 
-    Known env vars resolve through :data:`ojiichan.credentials.SECRET_MAP`
-    (e.g. ``ELASTICSEARCH_PASSWORD`` -> ``<folder>/elk/password``) so writes land
-    exactly where the read-path looks. Unknown names fall back to
-    ``<folder>/<env_var>`` so callers can store project-specific extras.
+    Known env vars resolve through :data:`ojiichan.credentials.SECRET_MAP`.
+    When ``project`` is supplied, credentials are written below
+    ``<folder>/projects/<project>/`` so provisioning another service cannot
+    overwrite this service's writer creds. Unknown names fall back to the raw
+    env-var name so callers can store project-specific extras.
     """
     name = SECRET_MAP.get(env_var, env_var)
-    return f"{vault_folder()}/{name}"
+    folder = vault_project_folder(project) if project else None
+    return f"{folder or vault_folder()}/{name}"
 
 
 def store_secret(
@@ -69,6 +71,7 @@ def store_secret(
     username: str | None = None,
     uri: str | None = None,
     notes: str | None = None,
+    project: str | None = None,
 ) -> str:
     """Write one credential to its vault path.
 
@@ -79,12 +82,12 @@ def store_secret(
     if cli is None:
         return "unavailable"
     return cli.set_secret(
-        secret_path(env_var), value, username=username, uri=uri, notes=notes
+        secret_path(env_var, project=project), value, username=username, uri=uri, notes=notes
     )
 
 
 def store_secrets(
-    mapping: dict[str, str | None], *, client: Any | None = None
+    mapping: dict[str, str | None], *, client: Any | None = None, project: str | None = None
 ) -> dict[str, str]:
     """Bulk-write a ``{env_var: value}`` mapping via one shared client.
 
@@ -100,7 +103,7 @@ def store_secrets(
             out[env_var] = "skipped"
             continue
         try:
-            out[env_var] = store_secret(env_var, value, client=cli)
+            out[env_var] = store_secret(env_var, value, client=cli, project=project)
         except Exception as exc:  # noqa: BLE001 - record per-secret failure, keep going.
             logger.debug("failed to store %s: %s", env_var, exc)
             out[env_var] = "failed"
