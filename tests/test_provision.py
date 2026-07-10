@@ -91,6 +91,35 @@ def test_store_secrets_writes_via_client(monkeypatch):
     assert written == {"ojiichan/projects/ios-writer/elk/password": "pw"}
 
 
+def test_store_secrets_writes_to_openbao(monkeypatch):
+    calls: list[tuple[str, dict, dict]] = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url, *, json, headers, timeout):
+        calls.append((url, json, headers))
+        return Response()
+
+    monkeypatch.setattr(vault_write, "connect", lambda: None)
+    monkeypatch.setattr(vault_write.httpx, "post", fake_post)
+    monkeypatch.setenv("OPENBAO_ADDR", "https://bao.example")
+    monkeypatch.setenv("OPENBAO_TOKEN", "tok")
+    monkeypatch.setenv("OPENBAO_KV_MOUNT", "kv")
+
+    out = vault_write.store_secrets({"ELASTICSEARCH_PASSWORD": "pw"}, project="ios-writer")
+
+    assert out == {"ELASTICSEARCH_PASSWORD": "updated"}
+    assert calls == [
+        (
+            "https://bao.example/v1/kv/data/ojiichan/projects/ios-writer/elk/password",
+            {"data": {"value": "pw"}},
+            {"X-Vault-Token": "tok"},
+        )
+    ]
+
+
 # --- ELK provisioner --------------------------------------------------------
 def _elk(monkeypatch, *, exists: bool, captured: dict | None = None) -> ElkProvisioner:
     def handler(request: httpx.Request) -> httpx.Response:

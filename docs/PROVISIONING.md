@@ -133,8 +133,11 @@ The inverse of `credentials.py`. Key invariant: **writes land where reads look.*
   `<folder>/projects/<project>/<secret_name>` so onboarding another service does
   not overwrite them. Runtime services opt in with
   `OJIICHAN_VAULT_PROJECT=<project>`; reads fall back to shared platform paths.
-- `store_secret(env_var, value, ...)` / `store_secrets(mapping)` call Locke's
-  `VaultClient.set_secret(path, value, ...)` (create-or-update).
+- `store_secret(env_var, value, ...)` / `store_secrets(mapping)` write to Locke's
+  `VaultClient.set_secret(path, value, ...)` and/or OpenBao/Vault KV v2.
+  Configure OpenBao with `OPENBAO_ADDR` + `OPENBAO_TOKEN` (or `VAULT_ADDR` +
+  `VAULT_TOKEN`), optional `OPENBAO_KV_MOUNT` (default `secret`), and optional
+  `OJIICHAN_VAULT_WRITE_TARGETS=locke,openbao`.
 - No `vault` extra installed → returns `"unavailable"` (provision still completes
   the backend work and tells the operator which secrets to store manually).
 

@@ -37,6 +37,12 @@ credentials from `ojiichan/projects/<service>/...` first, falling back to shared
 platform credentials. `ojiichan provision --project <service>` writes generated
 service creds to that scoped namespace.
 
+Provision can also write those generated creds to OpenBao/Vault KV v2. Configure
+`OPENBAO_ADDR` + `OPENBAO_TOKEN` (or `VAULT_ADDR` + `VAULT_TOKEN`) and optionally
+`OPENBAO_KV_MOUNT` (default `secret`). `OJIICHAN_VAULT_WRITE_TARGETS` can be
+`locke`, `openbao`, or `locke,openbao`; by default OpenBao is added when its env
+is present.
+
 To minimise Vaultwarden rate-limit pressure, all known secrets are warmed in one `list_secrets` call per process and snapshotted to a `0600` file under `${XDG_CACHE_HOME:-~/.cache}/ojiichan/`. Knobs:
 
 - `OJIICHAN_VAULT_CACHE_TTL` — seconds (default `300`, set `0` to disable disk cache only).
