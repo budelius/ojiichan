@@ -266,13 +266,17 @@ def _ensure_warmed() -> None:
 def get_secret(env_var: str) -> str | None:
     """Resolve a value from env first, then Locke/Vaultwarden when available."""
     with _lock:
-        if env_var in _memcache:
-            return _memcache[env_var]
-
+        # The environment always wins, even over an already-warmed vault
+        # snapshot: warming populates _memcache for EVERY mapped var, so a
+        # cache-first lookup would let a shared vault value (e.g. another
+        # project's elk/index-prefix) shadow an explicitly set env var.
         value = os.getenv(env_var)
         if value:
             _memcache[env_var] = value
             return value
+
+        if env_var in _memcache:
+            return _memcache[env_var]
 
         _ensure_warmed()
         return _memcache.get(env_var)
