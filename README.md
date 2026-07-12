@@ -81,6 +81,8 @@ in the scaffolded TypeScript/Rust/Swift services.
 
 ```bash
 ojiichan health --hours 6
+ojiichan health --project halp                  # uses halp's project-scoped vault config
+ojiichan health --project halp --backend elk --backend rustrak
 ojiichan dashboard --limit 10
 ojiichan dashboard --project-id 42 --json
 ojiichan logs --hours 2 --topic matrix --failures-only
@@ -97,6 +99,26 @@ ojiichan scaffold --lang swift --dir ../some-ios-app    # iOS/macOS, server-side
 # Scaleway Cockpit (Loki) runtime logs — e.g. a Serverless Function's stdout/stderr
 ojiichan logs --backend scaleway --hours 2 --failures-only
 ojiichan logs --backend scaleway --source m3rp-api-staging-api --topic "Login failed"
+```
+
+### Project-scoped health
+
+`ojiichan health` defaults to `elk,issues`. Pass `--project <service>` to resolve
+`ojiichan/projects/<service>/...` first, including the optional
+`health/backends` setting. Use `OJIICHAN_HEALTH_BACKENDS` or repeat `--backend`
+to select exactly which checks run. Scaleway is never auto-added from local
+operator credentials; choose `scaleway` only for services that actually ship to
+Scaleway Cockpit.
+
+Examples:
+
+```bash
+# project vault key: ojiichan/projects/halp/health/backends = elk,rustrak
+ojiichan health --project halp
+
+# explicit one-off selection
+ojiichan health --project halp --backend elk --backend rustrak
+ojiichan health --project worker-faas --backend scaleway --backend rustrak
 ```
 
 ### Error dashboard
