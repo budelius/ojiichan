@@ -40,12 +40,15 @@
       "ojiichan/projects/<service>/rustrak/api-token": "Project-scoped Rustrak API token",
       "ojiichan/projects/<service>/sentry-dsn": "Project-scoped Sentry/Rustrak ingest DSN",
       "ojiichan/projects/<service>/otel/exporter-endpoint": "Project-scoped OTLP exporter endpoint",
-      "ojiichan/projects/<service>/otel/exporter-headers": "Project-scoped OTLP exporter headers"
+      "ojiichan/projects/<service>/otel/exporter-headers": "Project-scoped OTLP exporter headers",
+      "ojiichan/projects/<service>/health/backends": "Comma-separated health backends for the service: elk,issues,rustrak,bugsink,obachan,scaleway",
+      "ojiichan/projects/<service>/issue/backend": "Issue backend for the service: rustrak,bugsink,obachan,sentry"
     },
     "env": {
       "_comment": "Non-secret runtime options or explicit local overrides.",
       "OJIICHAN_VAULT_FOLDER": "Optional Vaultwarden folder prefix; defaults to ojiichan",
       "OJIICHAN_VAULT_PROJECT": "Optional service namespace; reads ojiichan/projects/<service>/... before shared paths",
+      "OJIICHAN_HEALTH_BACKENDS": "Comma-separated health checks to run: elk,issues,rustrak,bugsink,obachan,scaleway; Scaleway is opt-in",
       "OJIICHAN_VAULT_WRITE_TARGETS": "Provision write targets: locke, openbao, or locke,openbao",
       "OPENBAO_ADDR": "OpenBao/Vault base URL for provisioning writes",
       "OPENBAO_TOKEN": "OpenBao/Vault token for provisioning writes",

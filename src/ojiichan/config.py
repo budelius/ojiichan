@@ -36,6 +36,7 @@ def tls_verify(verify_certs: bool, ca_cert: str | None) -> bool | str:
 
 
 ELK_TRANSPORTS = ("es", "otlp", "logstash")
+HEALTH_BACKENDS = ("elk", "issues", "rustrak", "bugsink", "obachan", "scaleway")
 
 
 @dataclass(frozen=True)
@@ -287,6 +288,22 @@ class ObachanBackendConfig:
 
 
 ISSUE_BACKENDS = ("rustrak", "sentry", "bugsink", "obachan")
+
+
+def health_backends() -> tuple[str, ...]:
+    """Return the project-declared health backends.
+
+    ``OJIICHAN_HEALTH_BACKENDS`` (or project-scoped vault key
+    ``health/backends``) is a comma-separated list from: ``elk``, ``issues``,
+    ``rustrak``, ``bugsink``, ``obachan``, ``scaleway``. The default keeps
+    backwards-compatible ELK + issue checks but deliberately does **not** add
+    Scaleway just because operator Cockpit credentials are visible locally.
+    """
+    raw = env("HEALTH_BACKENDS", "elk,issues") or "elk,issues"
+    selected = tuple(
+        item.strip().lower() for item in raw.split(",") if item.strip().lower()
+    )
+    return tuple(item for item in selected if item in HEALTH_BACKENDS) or ("elk", "issues")
 
 
 def default_issue_backend() -> str:

@@ -35,7 +35,11 @@ Override it with `OJIICHAN_VAULT_FOLDER` when needed. Set
 `OJIICHAN_VAULT_PROJECT=<service>` in a service to read project-scoped
 credentials from `ojiichan/projects/<service>/...` first, falling back to shared
 platform credentials. `ojiichan provision --project <service>` writes generated
-service creds to that scoped namespace.
+service creds to that scoped namespace. Use `OJIICHAN_HEALTH_BACKENDS` (or the
+project vault key `health/backends`) to choose which health checks run for that
+service, e.g. `elk,rustrak` or `elk,scaleway,rustrak`. Scaleway is opt-in so a
+local operator vault cannot accidentally add Cockpit warnings to an unrelated
+project.
 
 Provision can also write those generated creds to OpenBao/Vault KV v2. Configure
 `OPENBAO_ADDR` + `OPENBAO_TOKEN` (or `VAULT_ADDR` + `VAULT_TOKEN`) and optionally
@@ -109,7 +113,9 @@ to trim text output, and `--json` for the full machine-readable payload.
 `--backend scaleway` reads logs from a project's Scaleway Cockpit via the Loki
 HTTP API. `--source` maps to the Loki `resource_name` label (a function name);
 `--topic` is a substring line filter; `--failures-only` keeps error/exception/5xx
-lines. When configured, `ojiichan health` also reports a Scaleway section.
+lines. `ojiichan health` reports a Scaleway section only when selected via
+`--backend scaleway` or the project `OJIICHAN_HEALTH_BACKENDS` / `health/backends`
+setting.
 
 One-time setup (store the two secrets in the vault under `ojiichan/scaleway/…`,
 or export `OJIICHAN_SCALEWAY_LOKI_URL` / `OJIICHAN_SCALEWAY_COCKPIT_TOKEN`):

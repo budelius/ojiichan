@@ -234,6 +234,48 @@ def test_health_routes_to_rustrak_when_backend_selected(monkeypatch) -> None:
     assert captured["bugsink"] is False
 
 
+def test_health_does_not_query_scaleway_unless_selected(monkeypatch) -> None:
+    from ojiichan import cli as cli_mod
+
+    called: dict[str, bool] = {"scaleway": False}
+
+    monkeypatch.delenv("OJIICHAN_HEALTH_BACKENDS", raising=False)
+    monkeypatch.setenv("SCALEWAY_LOKI_URL", "https://loki.example")
+    monkeypatch.setattr(cli_mod, "check_elk", lambda **kwargs: {"status": "ok"})
+    monkeypatch.setattr(cli_mod, "check_bugsink", lambda **kwargs: {"status": "ok"})
+
+    def fake_check_scaleway(**kwargs):
+        called["scaleway"] = True
+        return {"status": "warn"}
+
+    monkeypatch.setattr(cli_mod, "check_scaleway", fake_check_scaleway)
+
+    args = cli_mod.build_parser().parse_args(["health", "--json"])
+    assert cli_mod.cmd_health(args) == 0
+    assert called["scaleway"] is False
+
+    args = cli_mod.build_parser().parse_args(["health", "--json", "--backend", "scaleway"])
+    assert cli_mod.cmd_health(args) == 0
+    assert called["scaleway"] is True
+
+
+def test_health_project_sets_vault_scope_before_resolution(monkeypatch) -> None:
+    from ojiichan import cli as cli_mod
+
+    captured: dict[str, str | None] = {}
+
+    def fake_health_backends():
+        captured["project"] = __import__("os").environ.get("OJIICHAN_VAULT_PROJECT")
+        return ("elk",)
+
+    monkeypatch.setattr(cli_mod, "health_backends", fake_health_backends)
+    monkeypatch.setattr(cli_mod, "check_elk", lambda **kwargs: {"status": "ok"})
+
+    args = cli_mod.build_parser().parse_args(["health", "--json", "--project", "halp"])
+    assert cli_mod.cmd_health(args) == 0
+    assert captured["project"] == "halp"
+
+
 def test_rustrak_issue_reference() -> None:
     client = RustrakClient(
         RustrakConfig(

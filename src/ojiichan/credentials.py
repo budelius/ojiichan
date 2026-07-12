@@ -57,6 +57,11 @@ SECRET_MAP: dict[str, str] = {
     "SENTRY_BASE_URL": "sentry-base-url",
     "SCALEWAY_LOKI_URL": "scaleway/loki-url",
     "SCALEWAY_COCKPIT_TOKEN": "scaleway/cockpit-token",
+    # Per-project health routing. These are non-secret but live in the same
+    # registry so OJIICHAN_VAULT_PROJECT can select the right backends and avoid
+    # accidentally querying operator/global credentials for unrelated projects.
+    "HEALTH_BACKENDS": "health/backends",
+    "ISSUE_BACKEND": "issue/backend",
     # obachan platform: future REST API credentials (resolved via locke at runtime).
     "OBACHAN_API_URL": "obachan/api-url",
     "OBACHAN_API_KEY": "obachan/api-key",
@@ -282,10 +287,19 @@ def get_secret(env_var: str) -> str | None:
         return _memcache.get(env_var)
 
 
-def _reset_for_tests() -> None:
-    """Clear in-process caches. Intended for use in tests only."""
+def reset_cache() -> None:
+    """Clear in-process credential caches.
+
+    Useful when a long-lived process switches ``OJIICHAN_VAULT_PROJECT`` and must
+    resolve a different project-scoped vault snapshot.
+    """
     global _client, _warmed
     with _lock:
         _memcache.clear()
         _client = None
         _warmed = False
+
+
+def _reset_for_tests() -> None:
+    """Clear in-process caches. Intended for use in tests only."""
+    reset_cache()

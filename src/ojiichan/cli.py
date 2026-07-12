@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
 from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
-from .config import ISSUE_BACKENDS, RustrakConfig, ScalewayConfig, default_issue_backend
-from .credentials import get_secret
+from .config import ISSUE_BACKENDS, RustrakConfig, default_issue_backend, health_backends
+from .credentials import get_secret, reset_cache
 from .elk import ElkClient, check_elk
 from .obachan_backend import ObachanLogsClient, check_obachan
 from .provision import (
@@ -51,74 +52,113 @@ def _select_issue_health_backend() -> str:
     return "rustrak" if RustrakConfig.from_env().api_token else "bugsink"
 
 
-def cmd_health(args: argparse.Namespace) -> int:
-    elk = check_elk(hours=args.hours, top_n=args.top)
-    backend = _select_issue_health_backend()
+def _run_issue_health(backend: str, args: argparse.Namespace) -> tuple[dict[str, Any], str]:
     if backend == "rustrak":
-        issue_health = check_rustrak(hours=args.hours, top_n=args.top)
-        issue_label = "Rustrak"
-    elif backend == "obachan":
-        issue_health = check_obachan(hours=args.hours, top_n=args.top)
-        issue_label = "OpenSearch/obachan"
-    else:
-        issue_health = check_bugsink(hours=args.hours, top_n=args.top)
-        issue_label = "Bugsink/Sentry"
-    # Scaleway Cockpit logs are included only when a Loki URL is configured, so
-    # projects that don't run on Scaleway see no change.
-    scaleway_health = None
-    if ScalewayConfig.from_env().query_url:
-        scaleway_health = check_scaleway(hours=args.hours, top_n=args.top)
+        return check_rustrak(hours=args.hours, top_n=args.top), "Rustrak"
+    if backend == "obachan":
+        return check_obachan(hours=args.hours, top_n=args.top), "OpenSearch/obachan"
+    return check_bugsink(hours=args.hours, top_n=args.top), "Bugsink/Sentry"
 
-    payload = {"elk": elk, "issues": issue_health, "issue_backend": backend}
-    if scaleway_health is not None:
+
+def _print_elk_health(elk: dict[str, Any]) -> None:
+    print(f"{_status_glyph(elk['status'])} ELK")
+    if "events_total" in elk:
+        print(f"  events={elk['events_total']} failures={elk.get('events_failures', 0)}")
+        for op, count in elk.get("top_failure_ops") or []:
+            print(f"    └─ {op}: {count}")
+    if elk.get("message"):
+        print(f"  {elk['message']}")
+    if elk.get("error"):
+        print(f"  {elk['error']}")
+
+
+def _print_scaleway_health(scaleway_health: dict[str, Any]) -> None:
+    print(f"\n{_status_glyph(scaleway_health['status'])} Scaleway (Cockpit)")
+    if "events_total" in scaleway_health:
+        print(
+            f"  events={scaleway_health['events_total']} "
+            f"failures={scaleway_health.get('events_failures', 0)}"
+        )
+    for failure in scaleway_health.get("recent_failures") or []:
+        print(f"    └─ {failure['resource']}: {failure['message']}")
+    if scaleway_health.get("message"):
+        print(f"  {scaleway_health['message']}")
+    if scaleway_health.get("error"):
+        print(f"  {scaleway_health['error']}")
+
+
+def _print_issue_health(issue_health: dict[str, Any], issue_label: str) -> None:
+    print(f"\n{_status_glyph(issue_health['status'])} {issue_label}")
+    if issue_health.get("ui_url"):
+        print(f"  triage: {issue_health['ui_url']}")
+    if "total_issues" in issue_health:
+        print(
+            f"  issues total={issue_health['total_issues']} "
+            f"open={issue_health.get('open', issue_health['unresolved'])} "
+            f"resolved={issue_health.get('resolved', 0)} "
+            f"muted={issue_health.get('muted', 0)} "
+            f"recent={len(issue_health.get('recent_unresolved') or [])}"
+        )
+        for issue in issue_health.get("recent_unresolved") or []:
+            print(f"    └─ [{issue['events']}x] {issue['type']}: {issue['message']}")
+    if issue_health.get("message"):
+        print(f"  {issue_health['message']}")
+
+
+def cmd_health(args: argparse.Namespace) -> int:
+    if args.project:
+        os.environ["OJIICHAN_VAULT_PROJECT"] = args.project
+        # Health is often called from long-lived agent processes; reset any
+        # previously warmed operator/global vault snapshot before resolving the
+        # project-scoped backend list and credentials.
+        reset_cache()
+
+    selected = tuple(args.backend or health_backends())
+    payload: dict[str, Any] = {"health_backends": selected}
+    statuses: set[str] = set()
+    issue_sections: list[tuple[dict[str, Any], str]] = []
+
+    if "elk" in selected:
+        elk = check_elk(hours=args.hours, top_n=args.top)
+        payload["elk"] = elk
+        statuses.add(elk["status"])
+
+    issue_backend = None
+    explicit_issue_backends = [b for b in ("rustrak", "bugsink", "obachan") if b in selected]
+    if "issues" in selected:
+        issue_backend = _select_issue_health_backend()
+        issue_health, issue_label = _run_issue_health(issue_backend, args)
+        payload["issues"] = issue_health
+        payload["issue_backend"] = issue_backend
+        issue_sections.append((issue_health, issue_label))
+        statuses.add(issue_health["status"])
+
+    for backend in explicit_issue_backends:
+        # Avoid duplicate output when `issues` auto-selected the same backend.
+        if backend == issue_backend:
+            continue
+        issue_health, issue_label = _run_issue_health(backend, args)
+        payload[backend] = issue_health
+        issue_sections.append((issue_health, issue_label))
+        statuses.add(issue_health["status"])
+
+    if "scaleway" in selected:
+        scaleway_health = check_scaleway(hours=args.hours, top_n=args.top)
         payload["scaleway"] = scaleway_health
+        statuses.add(scaleway_health["status"])
+
     if args.json:
         _print_json(payload)
     else:
-        print(f"Ojiichan health window={args.hours}h backend={backend}\n")
-        print(f"{_status_glyph(elk['status'])} ELK")
-        if "events_total" in elk:
-            print(f"  events={elk['events_total']} failures={elk.get('events_failures', 0)}")
-            for op, count in elk.get("top_failure_ops") or []:
-                print(f"    └─ {op}: {count}")
-        if elk.get("message"):
-            print(f"  {elk['message']}")
-        if elk.get("error"):
-            print(f"  {elk['error']}")
+        project = f" project={args.project}" if args.project else ""
+        print(f"Ojiichan health window={args.hours}h{project} backends={','.join(selected)}\n")
+        if "elk" in payload:
+            _print_elk_health(payload["elk"])
+        if "scaleway" in payload:
+            _print_scaleway_health(payload["scaleway"])
+        for issue_health, issue_label in issue_sections:
+            _print_issue_health(issue_health, issue_label)
 
-        if scaleway_health is not None:
-            print(f"\n{_status_glyph(scaleway_health['status'])} Scaleway (Cockpit)")
-            if "events_total" in scaleway_health:
-                print(
-                    f"  events={scaleway_health['events_total']} "
-                    f"failures={scaleway_health.get('events_failures', 0)}"
-                )
-            for failure in scaleway_health.get("recent_failures") or []:
-                print(f"    └─ {failure['resource']}: {failure['message']}")
-            if scaleway_health.get("message"):
-                print(f"  {scaleway_health['message']}")
-            if scaleway_health.get("error"):
-                print(f"  {scaleway_health['error']}")
-
-        print(f"\n{_status_glyph(issue_health['status'])} {issue_label}")
-        if issue_health.get("ui_url"):
-            print(f"  triage: {issue_health['ui_url']}")
-        if "total_issues" in issue_health:
-            print(
-                f"  issues total={issue_health['total_issues']} "
-                f"open={issue_health.get('open', issue_health['unresolved'])} "
-                f"resolved={issue_health.get('resolved', 0)} "
-                f"muted={issue_health.get('muted', 0)} "
-                f"recent={len(issue_health.get('recent_unresolved') or [])}"
-            )
-            for issue in issue_health.get("recent_unresolved") or []:
-                print(f"    └─ [{issue['events']}x] {issue['type']}: {issue['message']}")
-        if issue_health.get("message"):
-            print(f"  {issue_health['message']}")
-
-    statuses = {elk["status"], issue_health["status"]}
-    if scaleway_health is not None:
-        statuses.add(scaleway_health["status"])
     return 1 if "fail" in statuses else 0
 
 
@@ -499,9 +539,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", help="Load environment variables from a .env file")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
-    health = sub.add_parser("health", help="Check ELK and Bugsink health")
+    health = sub.add_parser("health", help="Check project-selected observability backends")
     health.add_argument("--hours", type=int, default=24)
     health.add_argument("--top", type=int, default=5)
+    health.add_argument(
+        "--project",
+        help="Project vault scope (sets OJIICHAN_VAULT_PROJECT before resolving backends/creds)",
+    )
+    health.add_argument(
+        "--backend",
+        action="append",
+        choices=["elk", "issues", "rustrak", "bugsink", "obachan", "scaleway"],
+        help=(
+            "Backend to check; repeat to combine. Defaults to OJIICHAN_HEALTH_BACKENDS "
+            "or project vault health/backends (default: elk,issues). Scaleway is opt-in."
+        ),
+    )
     health.add_argument("--json", action="store_true")
     health.set_defaults(func=cmd_health)
 
