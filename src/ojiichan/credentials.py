@@ -49,6 +49,8 @@ SECRET_MAP: dict[str, str] = {
     "ELASTICSEARCH_PASSWORD": "elk/password",
     "ELASTICSEARCH_INDEX_PREFIX": "elk/index-prefix",
     "RUSTRAK_API_TOKEN": "rustrak/api-token",
+    "RUSTRAK_PROJECT_ID": "rustrak/project-id",
+    "RUSTRAK_BASE_URL": "rustrak/base-url",
     "SENTRY_DSN": "sentry-dsn",
     "BUGSINK_API_TOKEN": "bugsink-api-token",
     "BUGSINK_HOST": "bugsink-host",

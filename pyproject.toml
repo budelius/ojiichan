@@ -1,6 +1,6 @@
 [project]
 name = "ojiichan"
-version = "0.9.5"
+version = "0.9.6"
 description = "Pseekoo diagnostics toolkit for ELK, Rustrak/Sentry/Bugsink, Scaleway Cockpit logs, and issue handoff workflows."
 readme = "README.md"
 license = { file = "LICENSE" }

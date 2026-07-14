@@ -91,6 +91,7 @@ def provision_all(
     if otlp_endpoint:
         otel = OtelProvisioner(
             OtelProvisionConfig(
+                project=project,
                 endpoint=otlp_endpoint,
                 headers=otlp_headers,
                 probe=otlp_probe,

@@ -148,6 +148,6 @@ def test_otel_provisioner_probe_pins_ca(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(otel_mod.httpx, "Client", _FakeClient)
     _FakeClient.last_verify = None
     OtelProvisioner(
-        OtelProvisionConfig(endpoint="https://otel:4318", probe=True, ca_cert=CA)
+        OtelProvisionConfig(project="demo", endpoint="https://otel:4318", probe=True, ca_cert=CA)
     )._probe()
     assert _FakeClient.last_verify == CA

@@ -60,9 +60,15 @@ def test_run_steps_stops_on_failure():
 def test_secret_path_uses_secret_map(monkeypatch):
     monkeypatch.delenv("OJIICHAN_VAULT_FOLDER", raising=False)
     assert vault_write.secret_path("ELASTICSEARCH_PASSWORD") == "ojiichan/elk/password"
+    assert vault_write.secret_path("RUSTRAK_PROJECT_ID") == "ojiichan/rustrak/project-id"
+    assert vault_write.secret_path("RUSTRAK_BASE_URL") == "ojiichan/rustrak/base-url"
     assert (
         vault_write.secret_path("ELASTICSEARCH_PASSWORD", project="ios-writer")
         == "ojiichan/projects/ios-writer/elk/password"
+    )
+    assert (
+        vault_write.secret_path("RUSTRAK_PROJECT_ID", project="halp")
+        == "ojiichan/projects/halp/rustrak/project-id"
     )
     # unknown env var falls back to a literal sub-path
     assert vault_write.secret_path("SOMETHING_NEW") == "ojiichan/SOMETHING_NEW"
@@ -217,13 +223,15 @@ def test_rustrak_register_only_dry_run():
 
 # --- OTel provisioner -------------------------------------------------------
 def test_otel_requires_endpoint():
-    result = OtelProvisioner(OtelProvisionConfig(endpoint="")).provision(dry_run=True)
+    result = OtelProvisioner(
+        OtelProvisionConfig(project="demo", endpoint="")
+    ).provision(dry_run=True)
     assert result.steps == []
     assert any("nothing to do" in note for note in result.notes)
 
 
 def test_otel_dry_run_plan():
-    result = OtelProvisioner(OtelProvisionConfig(endpoint="https://otel")).provision(dry_run=True)
+    result = OtelProvisioner(OtelProvisionConfig(project="demo", endpoint="https://otel")).provision(dry_run=True)
     assert result.steps[0].name == "endpoint_resolved"
     # endpoint is already set, so the precondition reports satisfied
     assert result.steps[0].status == "exists"

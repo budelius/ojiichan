@@ -443,6 +443,7 @@ def cmd_provision_otel(args: argparse.Namespace) -> int:
         )
         return 2
     config = OtelProvisionConfig(
+        project=args.project,
         endpoint=endpoint,
         headers=args.headers or get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
         probe=args.probe,

@@ -304,7 +304,7 @@ def provision_otel(
     Dry-run unless ``apply=True``. ``project`` is accepted for symmetry; the OTLP
     config is shared, so the same endpoint serves every project.
     """
-    config = OtelProvisionConfig(endpoint=endpoint, headers=headers, probe=probe)
+    config = OtelProvisionConfig(project=project, endpoint=endpoint, headers=headers, probe=probe)
     result = OtelProvisioner(config).provision(dry_run=not apply, write_vault=write_vault)
     return result.to_dict()
 

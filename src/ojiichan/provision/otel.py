@@ -26,6 +26,7 @@ from .base import ProvisionResult, ProvisionStep, run_steps
 
 @dataclass
 class OtelProvisionConfig:
+    project: str
     endpoint: str
     headers: str | None = None
     probe: bool = False
