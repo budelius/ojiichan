@@ -354,14 +354,28 @@ def _render_provision(result: ProvisionResult, args: argparse.Namespace) -> int:
     return 0 if result.ok else 1
 
 
+def _scoped_project(args: argparse.Namespace) -> str:
+    """Effective project for provisioning: ``<project>-<env>`` when ``--env`` is
+    given, else ``<project>``. Also pins ``OJIICHAN_VAULT_PROJECT`` to it so any
+    vault reads during provisioning resolve from the same env-scoped path, and
+    resets any previously-warmed global vault snapshot."""
+    env = (getattr(args, "env", None) or "").strip()
+    project = f"{args.project}-{env}" if env else args.project
+    os.environ["OJIICHAN_VAULT_PROJECT"] = project
+    reset_cache()
+    return project
+
+
 def cmd_provision_all(args: argparse.Namespace) -> int:
     """Onboard one project's logging + telemetry with near-zero interaction.
 
     Resolves the obachan platform admin connection and OTLP endpoint from
     ``--flag`` -> env -> Vault, so the common case is just ``--project <name>``.
+    With ``--env`` the project is scoped per-environment (see ``_scoped_project``).
     """
+    project = _scoped_project(args)
     results = provision_all(
-        project=args.project,
+        project=project,
         elk_admin_url=args.admin_url or get_secret("OPENSEARCH_ADMIN_URL"),
         elk_admin_password=args.admin_password or get_secret("OPENSEARCH_ADMIN_PASSWORD"),
         elk_admin_user=args.admin_user or get_secret("OPENSEARCH_ADMIN_USER") or "admin",
@@ -400,12 +414,13 @@ def cmd_provision_elk(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    project = _scoped_project(args)
     config = ElkProvisionConfig(
         admin_url=admin_url,
         admin_user=args.admin_user or get_secret("OPENSEARCH_ADMIN_USER") or "admin",
         admin_password=admin_password,
-        project=args.project,
-        index_prefix=args.prefix or args.project,
+        project=project,
+        index_prefix=args.prefix or project,
         retention_days=args.retention_days,
         scoped_user=args.scoped_user,
         scoped_password=args.scoped_password,
@@ -417,8 +432,9 @@ def cmd_provision_elk(args: argparse.Namespace) -> int:
 
 
 def cmd_provision_rustrak(args: argparse.Namespace) -> int:
+    project = _scoped_project(args)
     config = RustrakProvisionConfig(
-        project=args.project,
+        project=project,
         dsn=args.dsn or get_secret("SENTRY_DSN"),
         api_token=args.api_token or get_secret("RUSTRAK_API_TOKEN"),
         project_id=args.project_id or get_secret("RUSTRAK_PROJECT_ID"),
@@ -443,7 +459,7 @@ def cmd_provision_otel(args: argparse.Namespace) -> int:
         )
         return 2
     config = OtelProvisionConfig(
-        project=args.project,
+        project=_scoped_project(args),
         endpoint=endpoint,
         headers=args.headers or get_secret("OTEL_EXPORTER_OTLP_HEADERS"),
         probe=args.probe,
@@ -463,6 +479,15 @@ def _add_provision_commands(sub: argparse._SubParsersAction) -> None:
 
     def _common(parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--project", required=True, help="Project/service name")
+        parser.add_argument(
+            "--env",
+            help=(
+                "Environment (e.g. staging, production). When set, the effective "
+                "project becomes '<project>-<env>' — a separate Rustrak project, "
+                "ELK index prefix, and vault scope (ojiichan/projects/<project>-<env>/). "
+                "Omit for a single shared project across environments."
+            ),
+        )
         parser.add_argument(
             "--dry-run", action="store_true", help="Plan only; do not mutate or write Vault"
         )
@@ -523,7 +548,10 @@ def _add_provision_commands(sub: argparse._SubParsersAction) -> None:
     rustrak.add_argument("--admin-url", help="Admin API base URL (or RUSTRAK_ADMIN_URL)")
     rustrak.add_argument("--admin-token", help="Admin API token (or RUSTRAK_ADMIN_TOKEN)")
     rustrak.add_argument(
-        "--create-path", default="api/0/projects/", help="Admin project-create path"
+        # pseekoo's Rustrak (abians7/rustrak) exposes project creation at
+        # POST /api/projects, NOT the Sentry-style /api/0/projects/. Override
+        # per deployment if the backend differs.
+        "--create-path", default="api/projects", help="Admin project-create path"
     )
     rustrak.set_defaults(func=cmd_provision_rustrak)
 
