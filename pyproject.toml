@@ -1,6 +1,6 @@
 [project]
 name = "ojiichan"
-version = "0.9.6"
+version = "0.9.7"
 description = "Pseekoo diagnostics toolkit for ELK, Rustrak/Sentry/Bugsink, Scaleway Cockpit logs, and issue handoff workflows."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -33,6 +33,7 @@ vault = [
 Homepage = "https://gitlab.com/martin-wieser/ojiichan"
 Repository = "https://gitlab.com/martin-wieser/ojiichan"
 Issues = "https://gitlab.com/martin-wieser/ojiichan/-/issues"
+Changelog = "https://gitlab.com/martin-wieser/ojiichan/-/blob/main/CHANGELOG.md"
 
 [project.scripts]
 ojiichan = "ojiichan.cli:main"
@@ -65,4 +66,4 @@ artifacts = ["src/ojiichan/scaffolds/**/*.tmpl"]
 packages = ["src/ojiichan", "src/ojiichan_mcp"]
 
 [tool.hatch.build.targets.sdist]
-include = ["src/ojiichan", "src/ojiichan_mcp", "README.md", "LICENSE", "locke.json", "pyproject.toml"]
+include = ["src/ojiichan", "src/ojiichan_mcp", "README.md", "CHANGELOG.md", "LICENSE", "locke.json", "pyproject.toml"]

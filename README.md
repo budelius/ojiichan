@@ -424,19 +424,28 @@ For Xcode projects, an agent can call `xcode_test` with a local `project_path`, 
 
 ## Release
 
-Publishing is handled by GitLab CI in the public `martin-wieser/ojiichan` repository:
+See [`CHANGELOG.md`](CHANGELOG.md) for release notes. Publishing is handled by
+GitLab CI in the public `martin-wieser/ojiichan` repository:
 
 - pushes to the default branch publish a PEP 440 dev build to the GitLab PyPI registry;
 - tags matching `vX.Y.Z` publish the release to the GitLab PyPI registry and to pypi.org;
 - tagged releases require `PYPI_API_TOKEN` in GitLab CI variables.
 
-To release the current version:
+Before releasing, update `CHANGELOG.md`, `pyproject.toml`, and `uv.lock`, then run:
 
 ```bash
+uv run ruff check .
+uv run pytest
+rm -rf dist && uv build
+uvx twine check dist/*
 VERSION=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
-git tag "v${VERSION}"
-git push origin main --tags
+git tag -a "v${VERSION}" -m "release: ${VERSION}"
+git push origin main
+git push origin "v${VERSION}"
 ```
+
+The tag pipeline is the authoritative publisher. Verify the resulting version on
+[PyPI](https://pypi.org/project/ojiichan/) after the pipeline succeeds.
 
 ## Notes
 
