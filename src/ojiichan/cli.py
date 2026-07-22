@@ -211,6 +211,42 @@ def cmd_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_airtable_log(args: argparse.Namespace) -> int:
+    """Emit a structured Airtable maintenance event.
+
+    This is intentionally small and generic: operational tools that mutate
+    Airtable records can call this after a dry-run/apply so endpoint rewrites are
+    visible in the normal ELK/ojiichan event stream.
+    """
+    client = ElkClient(service=args.service)
+    payload = {
+        "operation": args.operation,
+        "base_id": args.base,
+        "table": args.table,
+        "records": args.records,
+        "dry_run": args.dry_run,
+    }
+    if args.old is not None:
+        payload["old"] = args.old
+    if args.new is not None:
+        payload["new"] = args.new
+    if args.note:
+        payload["note"] = args.note
+    ok = client.log_event(
+        "airtable_maintenance",
+        payload,
+        level=args.level,
+        topic=args.topic,
+        subtype="maintenance",
+        failure=args.failure,
+    )
+    if args.json:
+        _print_json({"ok": ok, "event_type": "airtable_maintenance", "payload": payload})
+    else:
+        print("logged" if ok else "not logged (ELK unavailable)")
+    return 0 if ok else 2
+
+
 def cmd_logs(args: argparse.Namespace) -> int:
     backend = getattr(args, "backend", "elk")
 
@@ -631,6 +667,25 @@ def build_parser() -> argparse.ArgumentParser:
     emit.add_argument("--service")
     emit.add_argument("--failure", action="store_true")
     emit.set_defaults(func=cmd_emit)
+
+    airtable_log = sub.add_parser(
+        "airtable-log",
+        help="Emit an Airtable maintenance event to ELK",
+    )
+    airtable_log.add_argument("operation", help="Operation name, e.g. replace-endpoint")
+    airtable_log.add_argument("--base", required=True, help="Airtable base id")
+    airtable_log.add_argument("--table", required=True, help="Airtable table name/id")
+    airtable_log.add_argument("--old", help="Old endpoint/text fragment")
+    airtable_log.add_argument("--new", help="New endpoint/text fragment")
+    airtable_log.add_argument("--records", type=int, default=0, help="Records affected")
+    airtable_log.add_argument("--dry-run", action="store_true")
+    airtable_log.add_argument("--note")
+    airtable_log.add_argument("--level", default="info")
+    airtable_log.add_argument("--topic", default="airtable")
+    airtable_log.add_argument("--service")
+    airtable_log.add_argument("--failure", action="store_true")
+    airtable_log.add_argument("--json", action="store_true")
+    airtable_log.set_defaults(func=cmd_airtable_log)
 
     resolve = sub.add_parser("resolve-issue", help="Resolve a Rustrak/Sentry issue by id")
     resolve.add_argument("issue_id")
