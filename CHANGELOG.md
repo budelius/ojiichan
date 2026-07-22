@@ -3,6 +3,22 @@
 All notable changes to ojiichan are documented here. Versions follow semantic
 versioning; release dates use ISO 8601.
 
+## [0.10.0] - 2026-07-22
+
+### Added
+
+- Add `ojiichan airtable-log` for structured Airtable maintenance audit events.
+- Add `--env` to provisioning commands for independent `<project>-<env>` Rustrak,
+  ELK, and Vault resources.
+
+### Fixed
+
+- Use Rustrak's `api/projects` project-create path by default.
+
+### Documentation
+
+- Document Airtable maintenance events and environment-scoped provisioning.
+
 ## [0.9.7] - 2026-07-14
 
 ### Documentation
@@ -130,6 +146,7 @@ versioning; release dates use ISO 8601.
 - Initial public Python library, CLI, MCP server, ELK integration, and
   Sentry/Bugsink issue workflows.
 
+[0.10.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.7...v0.10.0
 [0.9.7]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.6...v0.9.7
 [0.9.6]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.5...v0.9.6
 [0.9.5]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.4...v0.9.5
