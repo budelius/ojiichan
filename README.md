@@ -88,6 +88,8 @@ ojiichan dashboard --project-id 42 --json
 ojiichan logs --hours 2 --topic matrix --failures-only
 ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
+ojiichan airtable-log replace-endpoint --base app123 --table Services \
+  --old https://old.example --new https://new.example --records 12
 ojiichan resolve-issue 7b3a... --backend rustrak --project-id 42
 ojiichan resolve-issue 98765 --backend sentry
 
@@ -100,6 +102,22 @@ ojiichan scaffold --lang swift --dir ../some-ios-app    # iOS/macOS, server-side
 ojiichan logs --backend scaleway --hours 2 --failures-only
 ojiichan logs --backend scaleway --source m3rp-api-staging-api --topic "Login failed"
 ```
+
+### Airtable maintenance events
+
+`ojiichan airtable-log` records Airtable maintenance in the normal structured
+ELK event stream. It emits an `airtable_maintenance` event with the operation,
+base, table, affected record count, and optional old/new values and note.
+
+```bash
+ojiichan airtable-log replace-endpoint \
+  --base app123 --table Services \
+  --old https://old.example --new https://new.example \
+  --records 12 --service maintenance-worker --json
+```
+
+Use `--failure` and `--level error` for failed maintenance. `--dry-run` marks the
+recorded operation as a dry run; the audit event itself is still emitted.
 
 ### Project-scoped health
 
@@ -161,6 +179,10 @@ connection + OTLP endpoint resolve from Vault (seeded once by obachan/operator):
 ```bash
 ojiichan provision all --project m3rp-api --dry-run    # plan (mutates nothing)
 ojiichan provision all --project m3rp-api              # create access + write creds to Vault
+
+# Optional: isolate backend resources and Vault credentials by deployment environment
+ojiichan provision all --project m3rp-api --env staging
+ojiichan provision all --project m3rp-api --env production
 ```
 
 That runs the per-backend steps below; each backend with no usable config is
@@ -171,6 +193,11 @@ ojiichan provision elk --project m3rp-api          # index template + ISM + role
 ojiichan provision rustrak --project m3rp-api --dsn "https://<key>@ingest.rustrak.pseekoo.io/42"
 ojiichan provision otel --project m3rp-api --endpoint https://otel.pseekoo.io --probe
 ```
+
+With `--env <name>`, the effective project is `<project>-<env>`, producing a
+separate Rustrak project, ELK index prefix, and
+`ojiichan/projects/<project>-<env>/` Vault scope. Omit it to share one project
+across environments.
 
 Admin creds resolve `--flag` → env (`OPENSEARCH_ADMIN_URL` /
 `OPENSEARCH_ADMIN_PASSWORD`) → Vault (`elk/admin-*`). Every step is idempotent

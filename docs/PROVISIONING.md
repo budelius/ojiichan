@@ -18,7 +18,8 @@ ojiichan provision all --project m3rp-api
 Rustrak config from `--flag` → env → Vault, then runs ELK + OTel + Rustrak
 onboarding for the project. Backends with no usable config are **skipped with a
 note**, not failed. The individual subcommands (`elk` / `rustrak` / `otel`) exist
-for granular control.
+for granular control. Pass `--env staging` (or another environment name) to use
+`<project>-<env>` consistently for backend resources and Vault scope.
 
 After it runs (with the `vault` extra installed), `ojiichan health`, the Python
 library, and the scaffolded TS/Rust/Swift siblings all resolve their config from
@@ -71,8 +72,12 @@ A miniature of obachan's predicate-driven registry.
 
 ## 4. CLI contract
 
-All subcommands share: `--project <name>` (required), `--dry-run`, `--no-vault`,
-`--insecure`, `--json`. Admin/connection inputs resolve `--flag` → env → Vault so
+All subcommands share: `--project <name>` (required), optional `--env <name>`,
+`--dry-run`, `--no-vault`, `--insecure`, `--ca-cert`, and `--json`.
+`--env` changes the effective project to `<project>-<env>` and pins
+`OJIICHAN_VAULT_PROJECT` to that value, creating independent backend resources
+and `ojiichan/projects/<project>-<env>/` credentials. Omit it to retain one
+shared project. Admin/connection inputs resolve `--flag` → env → Vault so
 CI/agents needn't pass long arg lists.
 
 ### `ojiichan provision all` (the headline)
@@ -108,8 +113,8 @@ Two modes:
 - **register-only** (default): `--dsn` (`SENTRY_DSN`), `--api-token`
   (`RUSTRAK_API_TOKEN`), `--project-id` (`RUSTRAK_PROJECT_ID`) → store in Vault.
 - **admin-create**: `--admin-url` (`RUSTRAK_ADMIN_URL`) + `--admin-token`
-  (`RUSTRAK_ADMIN_TOKEN`) → POST `--create-path` (default `api/0/projects/`,
-  Sentry-compatible), parse DSN/token from the response, store in Vault.
+  (`RUSTRAK_ADMIN_TOKEN`) → POST `--create-path` (default `api/projects`, matching
+  Rustrak), parse DSN/token from the response, and store it in Vault.
 
 Writes to Vault: `SENTRY_DSN`, `RUSTRAK_API_TOKEN`, `RUSTRAK_PROJECT_ID`.
 
@@ -167,6 +172,10 @@ With the platform admin connection seeded in Vault (see §1), the whole flow is:
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api --dry-run  # inspect plan
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api            # create access + write Vault
 ojiichan health --json                          # now resolves everything from Vault
+
+# Or isolate staging and production completely:
+ojiichan provision all --project m3rp-api --env staging
+ojiichan provision all --project m3rp-api --env production
 ```
 
 Without Vault seeding, pass the admin connection once via env or flags:
@@ -183,6 +192,8 @@ ojiichan provision all --project m3rp-api \
 
 - [x] `provision all` onboards a project from just `--project`; admin conn + OTLP
       resolve from `--flag`→env→Vault; missing backends skip (not fail).
+- [x] Optional `--env` isolates backend resources and project-scoped credentials
+      under the effective `<project>-<env>` name.
 - [x] `provision elk|rustrak|otel` parse and dispatch; `--dry-run` mutates nothing.
 - [x] ELK resources match obachan's configmap names/shapes; all idempotent PUTs.
 - [x] Vault write-path stores project creds at project-scoped `SECRET_MAP` paths;
@@ -193,10 +204,10 @@ ojiichan provision all --project m3rp-api \
 
 ## 10. TODO(agent) — remaining work
 
-1. **Rustrak admin API**: the create path/response parsing (`provision/rustrak.py`)
-   is Sentry-shaped and configurable but **unverified against the live Rustrak
-   admin API**. Confirm the real endpoint + DSN/token fields, then tighten
-   `_create_project`. Until then, register-only mode is the supported path.
+1. **Rustrak admin API response validation**: project creation now defaults to
+   Rustrak's `POST /api/projects`; confirm all live response variants for DSN and
+   token fields, then tighten `_create_project`. Register-only mode remains the
+   safest fallback when an installation differs.
 2. **OpenSearch reachability preflight**: optional `doctor`-style check that the
    admin URL/creds work before walking steps (clearer error than a mid-run 401).
 3. **Rotation**: `--rotate` to force a new scoped password and re-store it.
