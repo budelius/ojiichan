@@ -238,6 +238,14 @@ def test_otel_dry_run_plan():
     assert result.ok and result.secrets_written == []
 
 
+def test_otel_without_probe_warns_before_rollout(monkeypatch):
+    monkeypatch.setattr(vault_write, "store_secrets", lambda *args, **kwargs: {})
+    result = OtelProvisioner(
+        OtelProvisionConfig(project="demo", endpoint="https://ingest.pseekoo.io")
+    ).provision()
+    assert any("without a reachability check" in note for note in result.notes)
+
+
 # --- one-shot orchestrator --------------------------------------------------
 def test_provision_all_returns_one_result_per_backend():
     # No config supplied at all: every backend is skipped (not failed), so an

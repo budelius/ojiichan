@@ -73,6 +73,24 @@ For `logstash`, route the `index` field in your pipeline with
 `OTEL_EXPORTER_OTLP_*` env vars are honored. The same switch and env vars exist
 in the scaffolded TypeScript/Rust/Swift services.
 
+### Obachan transport contract
+
+Do not mix a project-scoped OpenSearch writer with Obachan's shared Data Prepper
+listener:
+
+- **Recommended for external/mobile apps:** `ELK_TRANSPORT=es`, a writer created
+  by `ojiichan provision elk --project <name>`, and
+  `ELASTICSEARCH_HOST=https://os.<deployment-apex>`.
+- **Shared ingest:** `logstash` and `otlp` authenticate to Data Prepper as the
+  shared `ojiichan` user and use the platform's `app-*` indices. A
+  `<project>-writer` credential will receive `401` because Data Prepper has one
+  source identity and does not forward caller credentials to OpenSearch.
+
+Production shared-ingest clients use the stable
+`https://ingest.pseekoo.io` alias; the deployment-specific
+`https://ingest.<deployment-apex>` endpoint remains supported. Always run
+`ojiichan provision otel --probe ...` before shipping an OTLP endpoint.
+
 > **Reads stay on Elasticsearch.** `ELK_TRANSPORT` only changes the *write* path.
 > `ojiichan health` and `ojiichan logs` read from Elasticsearch no matter which
 > transport wrote the events, so those still need `ELASTICSEARCH_HOST`.
@@ -179,6 +197,9 @@ connection + OTLP endpoint resolve from Vault (seeded once by obachan/operator):
 ```bash
 ojiichan provision all --project m3rp-api --dry-run    # plan (mutates nothing)
 ojiichan provision all --project m3rp-api              # create access + write creds to Vault
+# Validate an externally reachable shared OTLP endpoint before rollout:
+ojiichan provision otel --project m3rp-api \
+  --endpoint https://ingest.pseekoo.io --headers "$OTLP_HEADERS" --probe
 
 # Optional: isolate backend resources and Vault credentials by deployment environment
 ojiichan provision all --project m3rp-api --env staging

@@ -29,7 +29,13 @@ It is a library (`ojiichan`), a CLI (`ojiichan`), and a local stdio **MCP server
 | **locke** | credentials | Resolves/stores secrets in Vaultwarden + OS keystore. ojiichan reads via the `vault` extra and **writes** via `locke`'s `VaultClient.set_secret`. |
 
 Rule of thumb: **platform-wide install → obachan; per-project onboarding →
-ojiichan.** ojiichan only **creates a project's access** on the already-running
+ojiichan.** For Obachan writes, keep the credential contracts separate:
+project-scoped writers are for direct `es`; shared Data Prepper `logstash`/`otlp`
+uses the `ojiichan` ingest identity and `app-*` indices. Production's stable
+shared endpoint is `https://ingest.pseekoo.io`; always provision explicitly and
+probe external endpoints before rollout.
+
+Ojiichan only **creates a project's access** on the already-running
 obachan cluster (OpenSearch users/roles/templates, a Rustrak project, OTLP
 wiring). It never installs the platform and never tears anything down (no
 deprovision/revert). The headline is one command:

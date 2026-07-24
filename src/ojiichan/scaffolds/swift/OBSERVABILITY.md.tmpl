@@ -93,6 +93,11 @@ so events stay queryable together regardless of how they were written.
 | `logstash` | `POST $LOGSTASH_URL` | Document sent with an extra `index` field; route it in your pipeline with `elasticsearch { index => "%{index}" }`. |
 | `otlp` | `POST $OTEL_EXPORTER_OTLP_ENDPOINT/v1/logs` | OpenTelemetry LogRecord (JSON); point at a Collector that exports to ELK. |
 
+> **Obachan:** use project-scoped writer credentials only with direct `es`.
+> Obachan's Data Prepper `logstash`/`otlp` listeners require the shared
+> `ojiichan` ingest identity and `app-*` indices. Production shared ingest uses
+> `https://ingest.pseekoo.io`; probe it before rollout.
+
 > **Reads stay on Elasticsearch.** Transports only affect the *write* path.
 > Querying logs / health checks read from Elasticsearch no matter which transport
 > wrote the events.

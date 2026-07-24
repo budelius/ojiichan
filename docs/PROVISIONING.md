@@ -125,7 +125,26 @@ it). `--endpoint` (`OTEL_EXPORTER_OTLP_ENDPOINT`), `--headers`
 `<endpoint>/v1/logs`; any HTTP response = reachable).
 
 Writes to Vault: `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`.
-Reminds the operator to set `ELK_TRANSPORT=otlp` in the service.
+Reminds the operator to set `ELK_TRANSPORT=otlp` in the service. Without
+`--probe`, it also records that reachability was not checked; agents must probe
+external endpoints before rollout.
+
+### Obachan credential boundary
+
+Obachan exposes two distinct write contracts:
+
+- `es`: use the project-scoped `<project>-writer` created above and the project's
+  index prefix. This is the recommended least-privilege mode for external and
+  mobile applications.
+- `logstash` / `otlp`: Data Prepper has one shared source identity (`ojiichan`)
+  and writes through its own OpenSearch sink credentials. Project writer
+  credentials do **not** authenticate to these listeners and are not forwarded.
+  Shared ingest uses the platform `app-*` index family.
+
+For Pseekoo production, the stable shared endpoint is
+`https://ingest.pseekoo.io`; `https://ingest.prod2.pseekoo.io` remains a
+supported deployment-apex alias. The endpoint is platform/operator input, not a
+value Ojiichan guesses. Provision it explicitly and use `--probe`.
 
 ## 5. Vault write-path (`provision/vault_write.py`)
 
