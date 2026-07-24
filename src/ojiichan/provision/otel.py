@@ -105,4 +105,8 @@ class OtelProvisioner:
                 + ", ".join(unavailable)
             )
         result.notes.append("set ELK_TRANSPORT=otlp in the service to use this endpoint")
+        if not self.c.probe:
+            result.notes.append(
+                "endpoint stored without a reachability check; rerun with --probe before rollout"
+            )
         return result

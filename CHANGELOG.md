@@ -3,6 +3,19 @@
 All notable changes to ojiichan are documented here. Versions follow semantic
 versioning; release dates use ISO 8601.
 
+## [0.10.1] - 2026-07-24
+
+### Fixed
+
+- Clearly separate project-scoped direct OpenSearch writers from Obachan's shared
+  Data Prepper `logstash` and OTLP ingest credentials.
+- Warn when an OTLP endpoint is stored without a `--probe` reachability check.
+
+### Documentation
+
+- Document the Obachan ingest credential boundary and stable production endpoint
+  in the README, provisioning contract, agent guidance, and all scaffold docs.
+
 ## [0.10.0] - 2026-07-22
 
 ### Added
@@ -146,6 +159,7 @@ versioning; release dates use ISO 8601.
 - Initial public Python library, CLI, MCP server, ELK integration, and
   Sentry/Bugsink issue workflows.
 
+[0.10.1]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.0...v0.10.1
 [0.10.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.7...v0.10.0
 [0.9.7]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.6...v0.9.7
 [0.9.6]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.5...v0.9.6
