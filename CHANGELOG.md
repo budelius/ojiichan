@@ -5,6 +5,10 @@ versioning; release dates use ISO 8601.
 
 ## [Unreleased]
 
+### Changed
+
+- Route trusted publish jobs to the protected Obachan staging OSS runner.
+
 ## [0.11.0] - 2026-07-28
 
 ### Added

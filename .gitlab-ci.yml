@@ -22,6 +22,8 @@ lint:
 publish:
   stage: publish
   image: python:3.13-slim
+  tags:
+    - obachan-staging-oss
   script:
     - pip install hatch twine
     - |
