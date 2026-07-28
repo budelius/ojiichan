@@ -4,7 +4,7 @@
 > **published package** instead of copied scaffold files, analogous to
 > `locke-public`. This is assessment + target design + status.
 >
-> **Status (2026-07-24):** Python `0.10.1` is the only published package. The npm
+> **Status (2026-07-28):** Python `0.11.0` is the only published package. The npm
 > and crate sections below remain a design contract; do not advertise those
 > packages as available until their acceptance criteria are complete.
 
@@ -67,7 +67,7 @@ their own build) without forcing the heavier parity-test monorepo now.
 ```json
 {
   "name": "@martin-wieser/ojiichan",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Env-driven ELK + Rustrak/Sentry observability client (TypeScript)",
   "license": "MIT",
   "type": "module",
@@ -89,7 +89,7 @@ their own build) without forcing the heavier parity-test monorepo now.
 [package]
 name = "ojiichan"                  # verify availability on crates.io; locke fell
                                    # back to "locke-creds" when "locke" was taken.
-version = "0.10.1"
+version = "0.11.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Env-driven ELK + Rustrak/Sentry observability client"

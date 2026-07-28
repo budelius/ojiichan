@@ -5,6 +5,8 @@ versioning; release dates use ISO 8601.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-07-28
+
 ### Added
 
 - Add `ojiichan verify` and the MCP `verify` tool to aggregate observability
@@ -173,7 +175,8 @@ versioning; release dates use ISO 8601.
 - Initial public Python library, CLI, MCP server, ELK integration, and
   Sentry/Bugsink issue workflows.
 
-[Unreleased]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.1...main
+[Unreleased]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.11.0...main
+[0.11.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.1...v0.11.0
 [0.10.1]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.0...v0.10.1
 [0.10.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.7...v0.10.0
 [0.9.7]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.6...v0.9.7
