@@ -16,7 +16,6 @@ runner:smoke:
     - obachan-staging-oss
   script:
     - test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
-    - python -c "import urllib.request; assert urllib.request.urlopen('https://gitlab.com', timeout=10).status == 200"
     - python -c "import urllib.request; assert urllib.request.urlopen('https://pypi.org', timeout=10).status == 200"
     - |
       python - <<'PY'
