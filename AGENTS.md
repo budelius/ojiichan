@@ -67,6 +67,10 @@ ojiichan provision all --project <name>     # admin conn + OTLP endpoint resolve
   (create-or-replace PUT/POST). Re-running reports `exists`, never churns.
 - **Safety**: `provision --dry-run` plans without mutating; MCP `provision_*`
   tools default to dry-run (`apply=False`).
+- **Production verification**: use Ojiichan's CLI/MCP/Python interfaces, public
+  service health endpoints, and CI/platform APIs. Never make `kubectl`, pod exec,
+  or an in-pod helper a routine release requirement. See
+  [`docs/OPERATIONS.md`](docs/OPERATIONS.md).
 - No marketing language, no fake stubs, feature branches for changes, run
   `ruff check .` + `uv run pytest` before claiming done.
 
@@ -84,5 +88,5 @@ src/ojiichan/
     vault_write.py  #   WRITE-path: locke set_secret at SECRET_MAP paths
     elk.py rustrak.py otel.py
 src/ojiichan_mcp/server.py   # MCP tools incl. provision_elk/rustrak/otel (dry-run default)
-docs/PROVISIONING.md docs/PACKAGING.md
+docs/PROVISIONING.md docs/PACKAGING.md docs/OPERATIONS.md
 ```

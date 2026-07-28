@@ -95,6 +95,19 @@ Production shared-ingest clients use the stable
 > `ojiichan health` and `ojiichan logs` read from Elasticsearch no matter which
 > transport wrote the events, so those still need `ELASTICSEARCH_HOST`.
 
+## Production verification
+
+Use Ojiichan through its CLI, MCP tools, or Python API for production diagnostics;
+do not enter application pods or require `kubectl` for routine verification.
+Direct cluster access is reserved for Obachan platform troubleshooting after a
+supported interface has identified a platform fault.
+
+A release check should combine CI-provider status, Ojiichan ELK/Rustrak health,
+the application's public `/health` endpoint, and the Obachan deployment result.
+A local Kubernetes control-plane timeout does not invalidate those checks. See
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the exact boundary, commands, and
+current API gaps.
+
 ## CLI
 
 ```bash
