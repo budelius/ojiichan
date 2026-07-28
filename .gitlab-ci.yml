@@ -9,6 +9,33 @@ cache:
   paths:
     - .cache/pip
 
+runner:smoke:
+  stage: lint
+  image: python:3.13-slim
+  tags:
+    - obachan-staging-oss
+  script:
+    - test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token
+    - python -c "import urllib.request; assert urllib.request.urlopen('https://gitlab.com', timeout=10).status == 200"
+    - python -c "import urllib.request; assert urllib.request.urlopen('https://pypi.org', timeout=10).status == 200"
+    - |
+      python - <<'PY'
+      import socket
+
+      blocked = [("10.96.0.1", 443), ("169.254.169.254", 80), ("openbao.openbao.svc", 8200)]
+      for target in blocked:
+          try:
+              connection = socket.create_connection(target, timeout=2)
+          except OSError:
+              continue
+          connection.close()
+          raise SystemExit(f"private endpoint reachable: {target!r}")
+      PY
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: false
+
 lint:
   stage: lint
   image: python:3.13-slim

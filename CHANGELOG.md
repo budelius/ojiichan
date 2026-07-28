@@ -7,7 +7,8 @@ versioning; release dates use ISO 8601.
 
 ### Changed
 
-- Route trusted publish jobs to the protected Obachan staging OSS runner.
+- Route trusted publish jobs to the protected Obachan staging OSS runner and add
+  a manual isolation smoke check for its public/private network boundary.
 
 ## [0.11.0] - 2026-07-28
 
