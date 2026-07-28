@@ -3,6 +3,22 @@
 All notable changes to ojiichan are documented here. Versions follow semantic
 versioning; release dates use ISO 8601.
 
+## [Unreleased]
+
+## [0.11.0] - 2026-07-28
+
+### Added
+
+- Add `ojiichan verify` and the MCP `verify` tool to aggregate observability
+  backend checks with public HTTP 200 health checks.
+- Add project-scoped credential selection to CLI logs and MCP health/log tools.
+
+### Documentation
+
+- Define API-first production verification and remove `kubectl`/in-pod helpers
+  from the routine release acceptance boundary.
+- Document the aggregate verification workflow and supported Ojiichan interfaces.
+
 ## [0.10.1] - 2026-07-24
 
 ### Fixed
@@ -159,6 +175,8 @@ versioning; release dates use ISO 8601.
 - Initial public Python library, CLI, MCP server, ELK integration, and
   Sentry/Bugsink issue workflows.
 
+[Unreleased]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.11.0...main
+[0.11.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.1...v0.11.0
 [0.10.1]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.10.0...v0.10.1
 [0.10.0]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.7...v0.10.0
 [0.9.7]: https://gitlab.com/martin-wieser/ojiichan/-/compare/v0.9.6...v0.9.7

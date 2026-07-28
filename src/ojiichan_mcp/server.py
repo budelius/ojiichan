@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 
 from ojiichan.beads import create_bead
 from ojiichan.bugsink import BugsinkClient, check_bugsink
-from ojiichan.credentials import get_secret
+from ojiichan.credentials import get_secret, project_scope
 from ojiichan.dsl import DiagnosticDoc, parse_any
 from ojiichan.elk import ElkClient, check_elk
 from ojiichan.provision import (
@@ -35,6 +35,7 @@ from ojiichan.rustrak import rustrak_dashboard as build_rustrak_dashboard
 from ojiichan.scaffold import available_languages, render_files
 from ojiichan.scaleway import ScalewayLogsClient, check_scaleway
 from ojiichan.sentry import SentryApiClient
+from ojiichan.verify import DEFAULT_VERIFY_BACKENDS, verify_production
 
 mcp = FastMCP("ojiichan")
 
@@ -46,9 +47,30 @@ def _safe_limit(value: int, *, default: int, maximum: int) -> int:
 
 
 @mcp.tool()
-def elk_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
-    """Check Elasticsearch connectivity, recent event volume, and failure-tagged events."""
-    return check_elk(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+def verify(
+    project: str | None = None,
+    backends: list[str] | None = None,
+    public_urls: list[str] | None = None,
+    hours: int = 24,
+    top: int = 5,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    """Aggregate project backend checks and public HTTP 200 health checks."""
+    return verify_production(
+        project=project,
+        backends=backends or DEFAULT_VERIFY_BACKENDS,
+        public_urls=public_urls or (),
+        hours=_safe_limit(hours, default=24, maximum=24 * 30),
+        top=_safe_limit(top, default=5, maximum=100),
+        timeout=max(0.1, min(timeout, 60.0)),
+    )
+
+
+@mcp.tool()
+def elk_health(hours: int = 24, top: int = 5, project: str | None = None) -> dict[str, Any]:
+    """Check Elasticsearch connectivity and events using optional project credentials."""
+    with project_scope(project):
+        return check_elk(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
 
 
 @mcp.tool()
@@ -58,6 +80,7 @@ def elk_logs(
     topic: str | None = None,
     source: str | None = None,
     failures_only: bool = False,
+    project: str | None = None,
 ) -> dict[str, Any]:
     """Query recent structured ELK events.
 
@@ -67,14 +90,16 @@ def elk_logs(
         topic: Optional index topic suffix, e.g. "auth" or "matrix".
         source: Optional exact-match source field filter.
         failures_only: Only return events where failure=true.
+        project: Optional project-scoped Vault credential namespace.
     """
-    total, entries = ElkClient().query_logs(
-        hours=_safe_limit(hours, default=24, maximum=24 * 30),
-        limit=_safe_limit(limit, default=50, maximum=500),
-        topic=topic,
-        source=source,
-        failures_only=failures_only,
-    )
+    with project_scope(project):
+        total, entries = ElkClient().query_logs(
+            hours=_safe_limit(hours, default=24, maximum=24 * 30),
+            limit=_safe_limit(limit, default=50, maximum=500),
+            topic=topic,
+            source=source,
+            failures_only=failures_only,
+        )
     return {"total": total, "entries": [entry.__dict__ for entry in entries]}
 
 
@@ -101,13 +126,18 @@ def emit_elk_event(
 
 
 @mcp.tool()
-def scaleway_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
-    """Check Scaleway Cockpit (Loki) reachability and recent failure-line volume.
+def scaleway_health(
+    hours: int = 24, top: int = 5, project: str | None = None
+) -> dict[str, Any]:
+    """Check Scaleway Cockpit using optional project-scoped credentials.
 
     Returns {"status": "fail"} with guidance when SCALEWAY_LOKI_URL /
     SCALEWAY_COCKPIT_TOKEN are not configured.
     """
-    return check_scaleway(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+    with project_scope(project):
+        return check_scaleway(
+            hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top
+        )
 
 
 @mcp.tool()
@@ -117,6 +147,7 @@ def scaleway_logs(
     topic: str | None = None,
     source: str | None = None,
     failures_only: bool = False,
+    project: str | None = None,
 ) -> dict[str, Any]:
     """Query Scaleway Cockpit (Loki) runtime logs, e.g. Serverless Function stdout/stderr.
 
@@ -126,21 +157,26 @@ def scaleway_logs(
         topic: Optional substring line filter (Loki ``|= topic``).
         source: Optional Scaleway ``resource_name`` (e.g. a function name) to scope to.
         failures_only: Only return error/exception/5xx-looking lines.
+        project: Optional project-scoped Vault credential namespace.
     """
-    total, entries = ScalewayLogsClient().query_logs(
-        hours=_safe_limit(hours, default=24, maximum=24 * 30),
-        limit=_safe_limit(limit, default=50, maximum=500),
-        topic=topic,
-        source=source,
-        failures_only=failures_only,
-    )
+    with project_scope(project):
+        total, entries = ScalewayLogsClient().query_logs(
+            hours=_safe_limit(hours, default=24, maximum=24 * 30),
+            limit=_safe_limit(limit, default=50, maximum=500),
+            topic=topic,
+            source=source,
+            failures_only=failures_only,
+        )
     return {"total": total, "entries": [entry.__dict__ for entry in entries]}
 
 
 @mcp.tool()
-def bugsink_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
-    """Check Bugsink/Sentry configuration and unresolved recent issue activity."""
-    return check_bugsink(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+def bugsink_health(
+    hours: int = 24, top: int = 5, project: str | None = None
+) -> dict[str, Any]:
+    """Check Bugsink/Sentry using optional project-scoped credentials."""
+    with project_scope(project):
+        return check_bugsink(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
 
 
 @mcp.tool()
@@ -325,9 +361,12 @@ def sentry_resolve_issue(issue_id: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def rustrak_health(hours: int = 24, top: int = 5) -> dict[str, Any]:
-    """Check Rustrak configuration and unresolved recent issue activity."""
-    return check_rustrak(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
+def rustrak_health(
+    hours: int = 24, top: int = 5, project: str | None = None
+) -> dict[str, Any]:
+    """Check Rustrak using optional project-scoped credentials."""
+    with project_scope(project):
+        return check_rustrak(hours=_safe_limit(hours, default=24, maximum=24 * 30), top_n=top)
 
 
 @mcp.tool()

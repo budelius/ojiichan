@@ -95,15 +95,29 @@ Production shared-ingest clients use the stable
 > `ojiichan health` and `ojiichan logs` read from Elasticsearch no matter which
 > transport wrote the events, so those still need `ELASTICSEARCH_HOST`.
 
+## Production verification
+
+Use Ojiichan through its CLI, MCP tools, or Python API for production diagnostics;
+do not enter application pods or require `kubectl` for routine verification.
+Direct cluster access is reserved for Obachan platform troubleshooting after a
+supported interface has identified a platform fault.
+
+A release check should combine CI-provider status, Ojiichan ELK/Rustrak health,
+the application's public `/health` endpoint, and the Obachan deployment result.
+A local Kubernetes control-plane timeout does not invalidate those checks. See
+[`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the exact boundary and commands.
+
 ## CLI
 
 ```bash
+ojiichan verify --project facts-production --backend elk --backend rustrak \
+  --url https://facts.stozn.ai/health --json
 ojiichan health --hours 6
 ojiichan health --project halp                  # uses halp's project-scoped vault config
 ojiichan health --project halp --backend elk --backend rustrak
 ojiichan dashboard --limit 10
 ojiichan dashboard --project-id 42 --json
-ojiichan logs --hours 2 --topic matrix --failures-only
+ojiichan logs --project halp --hours 2 --topic matrix --failures-only
 ojiichan emit matrix_exchange_failed --topic auth --level error --failure \
   --data '{"operation":"matrix_exchange","room_id":"!abc"}'
 ojiichan airtable-log replace-endpoint --base app123 --table Services \
@@ -448,19 +462,21 @@ Example MCP client config:
 
 Exposed tools:
 
-- `elk_health`
-- `elk_logs`
+- `verify` (aggregate backend checks + public HTTP health; accepts `project`)
+- `elk_health` (accepts `project`)
+- `elk_logs` (accepts `project`)
 - `emit_elk_event`
-- `bugsink_health`
+- `bugsink_health` (accepts `project`)
 - `bugsink_issues`
 - `parse_diagnostic_annotation`
 - `bugsink_resolve_issue` (returns "not supported" message)
 - `sentry_resolve_issue`
 - `rustrak_resolve_issue`
-- `rustrak_health`
+- `rustrak_health` (accepts `project`)
 - `rustrak_dashboard` (aggregate Rustrak error totals and per-project stats)
 - `rustrak_issues` (supports `filter`: `open`, `resolved`, `muted`, `all`)
 - `rustrak_issue_reference` (copy/share URL, `rustrak://` ref, and Markdown link)
+- `scaleway_health` / `scaleway_logs` (accept `project`)
 - `scaffold_observability` (renders TypeScript/Rust setup files)
 - `provision_project` (one-shot: all backends from just a project name; dry-run by default)
 - `provision_elk` / `provision_rustrak` / `provision_otel` (dry-run by default; `apply=True` mutates + writes Vault)

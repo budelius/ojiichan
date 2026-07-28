@@ -22,8 +22,10 @@ import os
 import stat
 import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,7 @@ SECRET_MAP: dict[str, str] = {
 }
 
 _lock = Lock()
+_project_lock = RLock()
 _memcache: dict[str, str | None] = {}
 _client: Any | None = None
 _warmed = False
@@ -300,6 +303,31 @@ def reset_cache() -> None:
         _memcache.clear()
         _client = None
         _warmed = False
+
+
+@contextmanager
+def project_scope(project: str | None) -> Iterator[None]:
+    """Temporarily select project-scoped credentials for one operation.
+
+    Project selection uses a process environment variable, so calls are
+    serialized and both the previous environment value and credential cache are
+    restored afterwards. This makes long-lived MCP processes safe when tools
+    select different projects on successive calls.
+    """
+    with _project_lock:
+        previous = os.environ.get(VAULT_PROJECT_ENV)
+        if project:
+            os.environ[VAULT_PROJECT_ENV] = project
+            reset_cache()
+        try:
+            yield
+        finally:
+            if project:
+                if previous is None:
+                    os.environ.pop(VAULT_PROJECT_ENV, None)
+                else:
+                    os.environ[VAULT_PROJECT_ENV] = previous
+                reset_cache()
 
 
 def _reset_for_tests() -> None:

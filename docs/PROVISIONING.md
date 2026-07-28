@@ -190,12 +190,18 @@ With the platform admin connection seeded in Vault (see §1), the whole flow is:
 ```bash
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api --dry-run  # inspect plan
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api            # create access + write Vault
-ojiichan health --json                          # now resolves everything from Vault
+ojiichan verify --project m3rp-api --backend elk --backend rustrak \
+  --url https://m3rp-api.example/health --json    # supported post-provision check
 
 # Or isolate staging and production completely:
 ojiichan provision all --project m3rp-api --env staging
 ojiichan provision all --project m3rp-api --env production
 ```
+
+This check runs through Ojiichan's supported interface. Do not add `kubectl exec`
+or an in-pod runtime helper to the provisioning acceptance path; direct cluster
+access is an Obachan troubleshooting concern. See
+[`OPERATIONS.md`](OPERATIONS.md).
 
 Without Vault seeding, pass the admin connection once via env or flags:
 
