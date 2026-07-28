@@ -5,11 +5,17 @@ versioning; release dates use ISO 8601.
 
 ## [Unreleased]
 
+### Added
+
+- Add `ojiichan verify` and the MCP `verify` tool to aggregate observability
+  backend checks with public HTTP 200 health checks.
+- Add project-scoped credential selection to CLI logs and MCP health/log tools.
+
 ### Documentation
 
 - Define API-first production verification and remove `kubectl`/in-pod helpers
   from the routine release acceptance boundary.
-- Document the existing Ojiichan interfaces and proposed verification/MCP gaps.
+- Document the aggregate verification workflow and supported Ojiichan interfaces.
 
 ## [0.10.1] - 2026-07-24
 

@@ -37,35 +37,30 @@ requirement.
 
 ## Ojiichan interfaces
 
-For operators, the CLI is the supported Ojiichan client:
+For operators, the CLI aggregates Ojiichan backend and public application checks:
 
 ```bash
-ojiichan health --project <service> \
-  --backend elk --backend rustrak --json
+ojiichan verify --project <service> \
+  --backend elk --backend rustrak \
+  --url https://service.example/health --json
 ```
 
-For agents, use the local stdio MCP tools `elk_health`, `rustrak_health`, and
-`rustrak_issues`. Start the MCP process with the target project's
-`OJIICHAN_VAULT_PROJECT` already set because those MCP health tools currently use
-process configuration rather than accepting a project argument.
+The command succeeds for `ok` and `warn` results and exits non-zero when any
+backend or public endpoint fails. HTTP health URLs must return status 200.
+
+For agents, use the local stdio MCP `verify` tool with `project`, `backends`, and
+`public_urls`. Individual `elk_health`, `elk_logs`, `rustrak_health`,
+`bugsink_health`, `scaleway_health`, and `scaleway_logs` calls also accept a
+`project` argument. Each call scopes Vault credentials temporarily and restores
+the process's prior project afterwards.
 
 The Python library is also a supported programmatic interface. Ojiichan does
 **not currently ship a hosted HTTP diagnostics API**; “use the Ojiichan API” means
 use its CLI, MCP tools, or Python API instead of entering the workload.
 
-## Current functional gaps
+## Scope retained outside Ojiichan
 
-The existing interfaces are sufficient to replace the in-pod runtime helper for
-ELK/Rustrak verification. Two additions would make the production workflow less
-error-prone:
-
-1. Add a single `ojiichan verify` command and MCP tool that returns one structured
-   result for selected Ojiichan backends plus configured public health URLs.
-2. Add an optional `project` argument to MCP health/log tools, matching CLI
-   `--project`, so an agent can select project-scoped Vault credentials per call
-   without restarting or mutating process environment.
-
-CI pipeline and Obachan deployment status should remain provider/platform API
-concerns rather than being reimplemented inside Ojiichan. A hosted Ojiichan HTTP
-service is unnecessary unless remote callers cannot run the CLI/MCP client with
-properly scoped credentials.
+CI pipeline and Obachan deployment status remain provider/platform API concerns
+rather than being reimplemented inside Ojiichan. A hosted Ojiichan HTTP service
+is unnecessary unless remote callers cannot run the CLI/MCP client with properly
+scoped credentials.

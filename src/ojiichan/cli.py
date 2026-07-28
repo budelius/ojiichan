@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 
 from .bugsink import BugsinkClient, check_bugsink
 from .config import ISSUE_BACKENDS, RustrakConfig, default_issue_backend, health_backends
-from .credentials import get_secret, reset_cache
+from .credentials import get_secret, project_scope, reset_cache
 from .elk import ElkClient, check_elk
 from .obachan_backend import ObachanLogsClient, check_obachan
 from .provision import (
@@ -29,6 +29,7 @@ from .rustrak import RustrakClient, check_rustrak, rustrak_dashboard
 from .scaffold import available_languages, scaffold
 from .scaleway import ScalewayLogsClient, check_scaleway
 from .sentry import SentryApiClient
+from .verify import BACKEND_CHECKS, DEFAULT_VERIFY_BACKENDS, verify_production
 
 
 def _status_glyph(status: str) -> str:
@@ -106,13 +107,11 @@ def _print_issue_health(issue_health: dict[str, Any], issue_label: str) -> None:
 
 
 def cmd_health(args: argparse.Namespace) -> int:
-    if args.project:
-        os.environ["OJIICHAN_VAULT_PROJECT"] = args.project
-        # Health is often called from long-lived agent processes; reset any
-        # previously warmed operator/global vault snapshot before resolving the
-        # project-scoped backend list and credentials.
-        reset_cache()
+    with project_scope(args.project):
+        return _cmd_health(args)
 
+
+def _cmd_health(args: argparse.Namespace) -> int:
     selected = tuple(args.backend or health_backends())
     payload: dict[str, Any] = {"health_backends": selected}
     statuses: set[str] = set()
@@ -160,6 +159,31 @@ def cmd_health(args: argparse.Namespace) -> int:
             _print_issue_health(issue_health, issue_label)
 
     return 1 if "fail" in statuses else 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    payload = verify_production(
+        project=args.project,
+        backends=args.backend or DEFAULT_VERIFY_BACKENDS,
+        public_urls=args.url or (),
+        hours=args.hours,
+        top=args.top,
+        timeout=args.timeout,
+    )
+    if args.json:
+        _print_json(payload)
+    else:
+        print(
+            f"Ojiichan verify project={args.project or '-'} "
+            f"status={payload['status']} window={args.hours}h"
+        )
+        for backend, result in payload["backends"].items():
+            detail = result.get("message") or result.get("error") or ""
+            print(f"{_status_glyph(result['status'])} {backend}: {detail}".rstrip())
+        for result in payload["public_health"]:
+            detail = result.get("status_code") or result.get("error") or ""
+            print(f"{_status_glyph(result['status'])} {result['url']}: {detail}".rstrip())
+    return 1 if payload["status"] == "fail" else 0
 
 
 def cmd_dashboard(args: argparse.Namespace) -> int:
@@ -248,6 +272,11 @@ def cmd_airtable_log(args: argparse.Namespace) -> int:
 
 
 def cmd_logs(args: argparse.Namespace) -> int:
+    with project_scope(getattr(args, "project", None)):
+        return _cmd_logs(args)
+
+
+def _cmd_logs(args: argparse.Namespace) -> int:
     backend = getattr(args, "backend", "elk")
 
     if backend == "obachan":
@@ -604,6 +633,25 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", help="Load environment variables from a .env file")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
+    verify = sub.add_parser(
+        "verify", help="Aggregate observability backends and public HTTP health checks"
+    )
+    verify.add_argument("--project", help="Project-scoped Vault credential namespace")
+    verify.add_argument(
+        "--backend",
+        action="append",
+        choices=sorted(BACKEND_CHECKS),
+        help="Backend to check; repeat to combine (default: elk,rustrak)",
+    )
+    verify.add_argument(
+        "--url", action="append", help="Public HTTP health URL expected to return 200; repeatable"
+    )
+    verify.add_argument("--hours", type=int, default=24)
+    verify.add_argument("--top", type=int, default=5)
+    verify.add_argument("--timeout", type=float, default=10.0)
+    verify.add_argument("--json", action="store_true")
+    verify.set_defaults(func=cmd_verify)
+
     health = sub.add_parser("health", help="Check project-selected observability backends")
     health.add_argument("--hours", type=int, default=24)
     health.add_argument("--top", type=int, default=5)
@@ -649,6 +697,9 @@ def build_parser() -> argparse.ArgumentParser:
             "use --source <function-name> to scope to one Serverless Function. "
             "obachan: log events from the obachan platform OpenSearch."
         ),
+    )
+    logs.add_argument(
+        "--project", help="Project vault scope used before resolving backend credentials"
     )
     logs.add_argument("--hours", type=int, default=24)
     logs.add_argument("--limit", type=int, default=50)

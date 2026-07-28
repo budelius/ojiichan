@@ -190,8 +190,8 @@ With the platform admin connection seeded in Vault (see §1), the whole flow is:
 ```bash
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api --dry-run  # inspect plan
 uv run --with "ojiichan[vault]" ojiichan provision all --project m3rp-api            # create access + write Vault
-ojiichan health --project m3rp-api --backend elk --backend rustrak --json
-                                                  # supported post-provision check
+ojiichan verify --project m3rp-api --backend elk --backend rustrak \
+  --url https://m3rp-api.example/health --json    # supported post-provision check
 
 # Or isolate staging and production completely:
 ojiichan provision all --project m3rp-api --env staging

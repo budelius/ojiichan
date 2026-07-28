@@ -78,10 +78,10 @@ ojiichan provision all --project <name>     # admin conn + OTLP endpoint resolve
 
 ```
 src/ojiichan/
-  cli.py            # argparse CLI: health logs emit resolve-issue scaffold provision
+  cli.py            # argparse CLI: verify health logs emit resolve-issue scaffold provision
   config.py         # ElkConfig/RustrakConfig/... from_env, resolution order
   credentials.py    # READ-path: SECRET_MAP + Locke/Vaultwarden resolve (+ disk cache)
-  elk.py rustrak.py scaleway.py bugsink.py sentry.py transports.py
+  elk.py rustrak.py scaleway.py bugsink.py sentry.py transports.py verify.py
   scaffold.py scaffolds/   # TS/Rust/Swift client templates
   provision/        # NEW — project-scoped provisioning
     base.py         #   predicate step engine (ProvisionStep / run_steps)

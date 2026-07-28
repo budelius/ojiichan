@@ -26,6 +26,7 @@ from .rustrak import RustrakClient, RustrakIssue, check_rustrak, rustrak_dashboa
 from .scaffold import ScaffoldResult, available_languages, render_files, scaffold
 from .scaleway import ScalewayLogEntry, ScalewayLogsClient, check_scaleway, query_scaleway_logs
 from .sentry import SentryApiClient, capture_exception, init_sentry
+from .verify import check_public_health, verify_production
 
 __all__ = [
     "BugsinkClient",
@@ -50,6 +51,7 @@ __all__ = [
     "capture_exception",
     "check_bugsink",
     "check_elk",
+    "check_public_health",
     "check_rustrak",
     "check_scaleway",
     "diagnostic",
@@ -65,4 +67,5 @@ __all__ = [
     "render_files",
     "rustrak_dashboard",
     "scaffold",
+    "verify_production",
 ]
