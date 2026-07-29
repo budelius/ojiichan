@@ -10,6 +10,12 @@ versioning; release dates use ISO 8601.
 - Route trusted publish jobs to the protected Obachan staging OSS runner and add
   a manual isolation smoke check for its public/private network boundary.
 
+### Fixed
+
+- Treat the successful Git source checkout as the runner's GitLab connectivity
+  check instead of probing GitLab's redirected root URL, which rejects automated
+  `urllib` requests with HTTP 403.
+
 ## [0.11.0] - 2026-07-28
 
 ### Added
