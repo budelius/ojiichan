@@ -79,16 +79,31 @@ def send_logstash(config: ElkConfig, index: str, document: dict[str, Any]) -> bo
 
 
 def _otlp_any_value(value: Any) -> dict[str, Any]:
-    """Wrap a Python value as an OTLP AnyValue."""
+    """Wrap a Python value as an OTLP AnyValue.
+
+    ``bool`` is matched before ``int`` because ``bool`` is a subclass of it.
+
+    A list of scalars becomes a real ``arrayValue`` so backends can index the
+    elements. Dicts and nested lists stay a compact JSON ``stringValue``: a
+    ``kvlistValue`` arrives at OpenSearch as an object, and a field already
+    mapped as text rejects the document with a mapping conflict. The string form
+    is lossless and safe to change later; the mapping is not.
+    """
     if isinstance(value, bool):
         return {"boolValue": value}
     if isinstance(value, int):
         return {"intValue": str(value)}
     if isinstance(value, float):
         return {"doubleValue": value}
+    if isinstance(value, list) and all(_is_otlp_scalar(item) for item in value):
+        return {"arrayValue": {"values": [_otlp_any_value(item) for item in value]}}
     if isinstance(value, (dict, list)):
         return {"stringValue": _json_compact(value)}
     return {"stringValue": str(value)}
+
+
+def _is_otlp_scalar(value: Any) -> bool:
+    return isinstance(value, (bool, int, float, str))
 
 
 def _json_compact(value: Any) -> str:
@@ -159,7 +174,27 @@ def send_otlp(config: ElkConfig, document: dict[str, Any], *, level: str) -> boo
         url,
         json=payload,
         headers=headers,
+        auth=_otlp_auth(config, headers),
         timeout=config.timeout,
         verify=config.verify,
     )
     return 200 <= response.status_code < 300
+
+
+def _otlp_auth(config: ElkConfig, headers: dict[str, str]) -> tuple[str, str] | None:
+    """Basic-auth credentials for the OTLP endpoint, if it needs them.
+
+    Obachan's Data Prepper ``otel_logs_source`` behind ``ingest.<apex>``
+    authenticates the shared ``ojiichan`` ingest identity with HTTP basic auth —
+    the same credential ``send_logstash`` already sends. Without this, switching
+    ``ELK_TRANSPORT`` from ``logstash`` to ``otlp`` turns every event into a 401,
+    and ``log_event`` only reports failures, so the outage is silent.
+
+    An explicit ``authorization`` header in ``OTEL_EXPORTER_OTLP_HEADERS`` wins:
+    a collector using bearer tokens must not have it overwritten.
+    """
+    if any(key.lower() == "authorization" for key in headers):
+        return None
+    if config.username and config.password:
+        return (config.username, config.password)
+    return None

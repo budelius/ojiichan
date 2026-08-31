@@ -5,6 +5,24 @@ versioning; release dates use ISO 8601.
 
 ## [Unreleased]
 
+### Fixed
+
+- Send HTTP basic auth on the `otlp` transport, matching `es` and `logstash`.
+  Obachan's Data Prepper `otel_logs_source` authenticates the shared `ojiichan`
+  ingest identity with basic auth, so switching `ELK_TRANSPORT` from `logstash`
+  to `otlp` previously turned every event into a 401 — silently, because
+  `log_event` only reports failures. An explicit `authorization` header in
+  `OTEL_EXPORTER_OTLP_HEADERS` still wins, so bearer-token collectors are
+  unaffected. Fixed in the Python client and the Swift, TypeScript, and Rust
+  scaffolds.
+- Encode a list of scalars as an OTLP `arrayValue` instead of a JSON string.
+  Objects and nested lists deliberately stay JSON strings: a `kvlistValue`
+  reaches OpenSearch as an object and a field already mapped as text would
+  reject the document with a mapping conflict.
+- Compute `timeUnixNano` with `BigInt` in the TypeScript scaffold. Epoch
+  nanoseconds exceed `Number.MAX_SAFE_INTEGER`, so the previous
+  `Date.parse(ts) * 1e6` lost precision in the low digits.
+
 ### Changed
 
 - Route trusted publish jobs to the protected Obachan staging OSS runner and add
