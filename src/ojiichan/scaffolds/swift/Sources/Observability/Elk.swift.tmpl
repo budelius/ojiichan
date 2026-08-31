@@ -164,14 +164,34 @@ private func otlpSeverityNumber(_ level: String) -> Int {
     }
 }
 
+// Wrap a value as an OTLP AnyValue. `Bool` is matched first: a boolean bridged
+// from JSON is an NSNumber and would otherwise serialize as `intValue: "1"`.
+//
+// An array of scalars becomes a real `arrayValue` so backends can index the
+// elements. Dictionaries and nested arrays stay a compact JSON `stringValue`: a
+// `kvlistValue` arrives at OpenSearch as an object, and a field already mapped
+// as text rejects the document with a mapping conflict. The string form is
+// lossless and safe to change later; the mapping is not.
 private func otlpAnyValue(_ value: Any) -> [String: Any] {
     switch value {
     case let b as Bool: return ["boolValue": b]
     case let i as Int: return ["intValue": String(i)]
     case let d as Double: return ["doubleValue": d]
     case let s as String: return ["stringValue": s]
-    default: return ["stringValue": "\(value)"]
+    case let array as [Any] where array.allSatisfy(isOtlpScalar):
+        return ["arrayValue": ["values": array.map(otlpAnyValue)]]
+    default:
+        if JSONSerialization.isValidJSONObject(value),
+            let data = try? JSONSerialization.data(withJSONObject: value),
+            let json = String(data: data, encoding: .utf8) {
+            return ["stringValue": json]
+        }
+        return ["stringValue": "\(value)"]
     }
+}
+
+private func isOtlpScalar(_ value: Any) -> Bool {
+    value is Bool || value is Int || value is Double || value is String
 }
 
 // Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
@@ -231,7 +251,16 @@ private func sendOtlp(
         logLocally(" (failed to encode OTLP payload)")
         return false
     }
-    return await sendJSON(
-        url, body: body, cfg: cfg, headers: parseOtlpHeaders(cfg.otlpHeaders), logLocally: logLocally
-    )
+    // Obachan's Data Prepper `otel_logs_source` behind ingest.<apex>
+    // authenticates the shared `ojiichan` ingest identity with HTTP basic auth —
+    // the same credential `sendLogstash` already sends. Without this, switching
+    // ELK_TRANSPORT from `logstash` to `otlp` turns every event into a 401, and
+    // `logEvent` only reports failures, so the outage is silent.
+    //
+    // An explicit `authorization` header in OTEL_EXPORTER_OTLP_HEADERS wins: a
+    // collector using bearer tokens must not have it overwritten.
+    var headers = parseOtlpHeaders(cfg.otlpHeaders)
+    let hasExplicitAuth = headers.keys.contains { $0.lowercased() == "authorization" }
+    if !hasExplicitAuth, let auth = basicAuthValue(cfg) { headers["Authorization"] = auth }
+    return await sendJSON(url, body: body, cfg: cfg, headers: headers, logLocally: logLocally)
 }

@@ -115,13 +115,27 @@ const OTLP_SEVERITY: Record<string, number> = {
   trace: 1, debug: 5, info: 9, warn: 13, warning: 13, error: 17, fatal: 21, critical: 21,
 };
 
+// Wrap a value as an OTLP AnyValue.
+//
+// An array of scalars becomes a real `arrayValue` so backends can index the
+// elements. Objects and nested arrays stay a compact JSON `stringValue`: a
+// `kvlistValue` arrives at OpenSearch as an object, and a field already mapped
+// as text rejects the document with a mapping conflict. The string form is
+// lossless and safe to change later; the mapping is not.
 function otlpAnyValue(value: unknown): Record<string, unknown> {
   if (typeof value === "boolean") return { boolValue: value };
   if (typeof value === "number") {
     return Number.isInteger(value) ? { intValue: String(value) } : { doubleValue: value };
   }
+  if (Array.isArray(value) && value.every(isOtlpScalar)) {
+    return { arrayValue: { values: value.map(otlpAnyValue) } };
+  }
   if (value && typeof value === "object") return { stringValue: JSON.stringify(value) };
   return { stringValue: String(value) };
+}
+
+function isOtlpScalar(value: unknown): boolean {
+  return ["boolean", "number", "string"].includes(typeof value);
 }
 
 // Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
@@ -146,8 +160,13 @@ async function sendOtlp(
 ): Promise<boolean> {
   const url = endpoint.endsWith("/v1/logs") ? endpoint : `${endpoint}/v1/logs`;
   const ts = document["@timestamp"];
+  // BigInt, not Number: epoch-nanoseconds exceed Number.MAX_SAFE_INTEGER by two
+  // orders of magnitude, so `Date.parse(ts) * 1e6` silently loses precision in
+  // the low digits.
   const timeUnixNano =
-    typeof ts === "string" ? String(Date.parse(ts) * 1_000_000) : "0";
+    typeof ts === "string" && !Number.isNaN(Date.parse(ts))
+      ? (BigInt(Date.parse(ts)) * 1_000_000n).toString()
+      : "0";
   const attributes = Object.entries(document)
     .filter(([key]) => key !== "@timestamp")
     .map(([key, value]) => ({ key, value: otlpAnyValue(value) }));
@@ -176,9 +195,25 @@ async function sendOtlp(
       },
     ],
   };
+  // Obachan's Data Prepper `otel_logs_source` behind ingest.<apex> authenticates
+  // the shared `ojiichan` ingest identity with HTTP basic auth — the same
+  // credential `sendLogstash` already sends. Without this, switching
+  // ELK_TRANSPORT from `logstash` to `otlp` turns every event into a 401, and
+  // `logEvent` only reports failures, so the outage is silent.
+  //
+  // An explicit `authorization` header in OTEL_EXPORTER_OTLP_HEADERS wins: a
+  // collector using bearer tokens must not have it overwritten.
+  const otlpHeaders = parseOtlpHeaders(cfg.otlpHeaders);
+  const hasExplicitAuth = Object.keys(otlpHeaders).some(
+    (key) => key.toLowerCase() === "authorization",
+  );
+  const headers = {
+    ...(hasExplicitAuth ? { "Content-Type": "application/json" } : basicAuthHeaders(cfg)),
+    ...otlpHeaders,
+  };
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...parseOtlpHeaders(cfg.otlpHeaders) },
+    headers,
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(cfg.timeoutMs),
   });

@@ -211,6 +211,13 @@ fn otlp_severity_number(level: &str) -> i32 {
     }
 }
 
+/// Wrap a value as an OTLP AnyValue.
+///
+/// An array of scalars becomes a real `arrayValue` so backends can index the
+/// elements. Objects and nested arrays stay a compact JSON `stringValue`: a
+/// `kvlistValue` arrives at OpenSearch as an object, and a field already mapped
+/// as text rejects the document with a mapping conflict. The string form is
+/// lossless and safe to change later; the mapping is not.
 fn otlp_any_value(value: &serde_json::Value) -> serde_json::Value {
     match value {
         serde_json::Value::Bool(b) => serde_json::json!({ "boolValue": b }),
@@ -219,8 +226,19 @@ fn otlp_any_value(value: &serde_json::Value) -> serde_json::Value {
         }
         serde_json::Value::Number(n) => serde_json::json!({ "doubleValue": n.as_f64() }),
         serde_json::Value::String(s) => serde_json::json!({ "stringValue": s }),
+        serde_json::Value::Array(items) if items.iter().all(is_otlp_scalar) => {
+            let values: Vec<serde_json::Value> = items.iter().map(otlp_any_value).collect();
+            serde_json::json!({ "arrayValue": { "values": values } })
+        }
         other => serde_json::json!({ "stringValue": other.to_string() }),
     }
+}
+
+fn is_otlp_scalar(value: &serde_json::Value) -> bool {
+    matches!(
+        value,
+        serde_json::Value::Bool(_) | serde_json::Value::Number(_) | serde_json::Value::String(_)
+    )
 }
 
 /// Parse the standard `OTEL_EXPORTER_OTLP_HEADERS` format: comma-separated
@@ -296,10 +314,29 @@ fn send_otlp(document: &serde_json::Value, level: &str) -> bool {
 
     let client = reqwest::blocking::Client::new();
     let mut request = client.post(&url).timeout(http_timeout()).json(&payload);
-    for (key, value) in env_var("OTEL_EXPORTER_OTLP_HEADERS")
+    let otlp_headers = env_var("OTEL_EXPORTER_OTLP_HEADERS")
         .map(|raw| parse_otlp_headers(&raw))
-        .unwrap_or_default()
-    {
+        .unwrap_or_default();
+    let has_explicit_auth = otlp_headers
+        .iter()
+        .any(|(key, _)| key.eq_ignore_ascii_case("authorization"));
+    // Obachan's Data Prepper `otel_logs_source` behind ingest.<apex>
+    // authenticates the shared `ojiichan` ingest identity with HTTP basic auth —
+    // the same credential `send_logstash` already sends. Without this, switching
+    // ELK_TRANSPORT from `logstash` to `otlp` turns every event into a 401, and
+    // `log_event` only reports failures, so the outage is silent.
+    //
+    // An explicit `authorization` header in OTEL_EXPORTER_OTLP_HEADERS wins: a
+    // collector using bearer tokens must not have it overwritten.
+    if !has_explicit_auth {
+        if let (Some(user), Some(password)) = (
+            env_var("ELASTICSEARCH_USERNAME"),
+            env_var("ELASTICSEARCH_PASSWORD"),
+        ) {
+            request = request.basic_auth(user, Some(password));
+        }
+    }
+    for (key, value) in otlp_headers {
         request = request.header(key, value);
     }
     match request.send() {

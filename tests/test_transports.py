@@ -110,3 +110,68 @@ def test_otlp_severity_mapping() -> None:
     assert transports.otlp_severity_number("warning") == 13
     assert transports.otlp_severity_number("error") == 17
     assert transports.otlp_severity_number("nonsense") == 9
+
+
+def test_otlp_sends_basic_auth_like_logstash(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Data Prepper's otel_logs_source authenticates the shared ingest identity.
+
+    Without this the `logstash` -> `otlp` switch 401s on every event, and
+    `log_event` only reports failures, so the outage is silent.
+    """
+    cap = _Capture()
+    monkeypatch.setattr(transports.httpx, "post", cap)
+    cfg = ElkConfig(
+        host=None,
+        transport="otlp",
+        otlp_endpoint="http://collector:4318",
+        username="ojiichan",
+        password="s3cret",
+    )
+    assert ElkClient(cfg).log_event("e", {"operation": "op"}) is True
+    assert cap.kwargs["auth"] == ("ojiichan", "s3cret")
+
+
+def test_otlp_explicit_authorization_header_wins(monkeypatch: pytest.MonkeyPatch) -> None:
+    cap = _Capture()
+    monkeypatch.setattr(transports.httpx, "post", cap)
+    cfg = ElkConfig(
+        host=None,
+        transport="otlp",
+        otlp_endpoint="http://collector:4318",
+        otlp_headers="Authorization=Bearer xyz",
+        username="ojiichan",
+        password="s3cret",
+    )
+    assert ElkClient(cfg).log_event("e", {"operation": "op"}) is True
+    assert cap.kwargs["auth"] is None
+    assert cap.kwargs["headers"]["Authorization"] == "Bearer xyz"
+
+
+def test_otlp_omits_auth_when_no_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    cap = _Capture()
+    monkeypatch.setattr(transports.httpx, "post", cap)
+    cfg = ElkConfig(host=None, transport="otlp", otlp_endpoint="http://collector:4318")
+    assert ElkClient(cfg).log_event("e", {"operation": "op"}) is True
+    assert cap.kwargs["auth"] is None
+
+
+def test_otlp_any_value_encodes_bool_before_int() -> None:
+    # bool is a subclass of int; matching int first would emit intValue "1".
+    assert transports._otlp_any_value(True) == {"boolValue": True}
+    assert transports._otlp_any_value(1) == {"intValue": "1"}
+
+
+def test_otlp_any_value_encodes_scalar_arrays() -> None:
+    assert transports._otlp_any_value(["a", "b"]) == {
+        "arrayValue": {"values": [{"stringValue": "a"}, {"stringValue": "b"}]}
+    }
+    assert transports._otlp_any_value([1, 2]) == {
+        "arrayValue": {"values": [{"intValue": "1"}, {"intValue": "2"}]}
+    }
+
+
+def test_otlp_any_value_keeps_objects_as_json_strings() -> None:
+    # A kvlistValue would reach OpenSearch as an object and conflict with a
+    # field already mapped as text, which rejects the whole document.
+    assert transports._otlp_any_value({"a": 1}) == {"stringValue": '{"a":1}'}
+    assert transports._otlp_any_value([{"a": 1}]) == {"stringValue": '[{"a":1}]'}
