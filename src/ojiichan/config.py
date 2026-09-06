@@ -157,7 +157,9 @@ class SentryApiConfig:
     def from_env(cls) -> SentryApiConfig:
         return cls(
             auth_token=env("SENTRY_AUTH_TOKEN"),
-            base_url=(env("SENTRY_BASE_URL", "https://sentry.io") or "https://sentry.io").rstrip("/"),
+            base_url=(env("SENTRY_BASE_URL", "https://sentry.io") or "https://sentry.io").rstrip(
+                "/"
+            ),
             timeout=float(env("SENTRY_TIMEOUT", "10") or "10"),
         )
 
@@ -295,14 +297,12 @@ def health_backends() -> tuple[str, ...]:
 
     ``OJIICHAN_HEALTH_BACKENDS`` (or project-scoped vault key
     ``health/backends``) is a comma-separated list from: ``elk``, ``issues``,
-    ``rustrak``, ``bugsink``, ``obachan``, ``scaleway``. The default keeps
+    ``rustrak``, ``bugsink``, ``obachan``, ``scaleway``, ``openbao``. The default keeps
     backwards-compatible ELK + issue checks but deliberately does **not** add
     Scaleway just because operator Cockpit credentials are visible locally.
     """
     raw = env("HEALTH_BACKENDS", "elk,issues") or "elk,issues"
-    selected = tuple(
-        item.strip().lower() for item in raw.split(",") if item.strip().lower()
-    )
+    selected = tuple(item.strip().lower() for item in raw.split(",") if item.strip().lower())
     return tuple(item for item in selected if item in HEALTH_BACKENDS) or ("elk", "issues")
 
 

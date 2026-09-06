@@ -15,6 +15,7 @@ from .config import ISSUE_BACKENDS, RustrakConfig, default_issue_backend, health
 from .credentials import get_secret, project_scope, reset_cache
 from .elk import ElkClient, check_elk
 from .obachan_backend import ObachanLogsClient, check_obachan
+from .openbao import check_openbao
 from .provision import (
     ElkProvisionConfig,
     ElkProvisioner,
@@ -88,6 +89,16 @@ def _print_scaleway_health(scaleway_health: dict[str, Any]) -> None:
         print(f"  {scaleway_health['error']}")
 
 
+def _print_openbao_health(openbao: dict[str, Any]) -> None:
+    marks = {"ok": "OK", "fail": "FAIL", "unknown": "UNKNOWN", "skip": "SKIP"}
+    mark = marks.get(openbao["status"], openbao["status"])
+    print(f"  openbao: {mark} {openbao.get('message', '')}")
+    for node in openbao.get("nodes") or []:
+        # Print the state, not just a tick: "unreachable" and "unsealed" are
+        # different findings and the summary line alone hides which is which.
+        print(f"    └─ {node['address']}: {node.get('state', node['status'])}")
+
+
 def _print_issue_health(issue_health: dict[str, Any], issue_label: str) -> None:
     print(f"\n{_status_glyph(issue_health['status'])} {issue_label}")
     if issue_health.get("ui_url"):
@@ -145,6 +156,15 @@ def _cmd_health(args: argparse.Namespace) -> int:
         scaleway_health = check_scaleway(hours=args.hours, top_n=args.top)
         payload["scaleway"] = scaleway_health
         statuses.add(scaleway_health["status"])
+
+    if "openbao" in selected:
+        openbao_health = check_openbao()
+        payload["openbao"] = openbao_health
+        # "skip" (no addresses configured) must not colour the overall result:
+        # not asking is not a failure. "unknown" DOES propagate — a member we
+        # could not reach is an unanswered question, not a pass.
+        if openbao_health["status"] != "skip":
+            statuses.add(openbao_health["status"])
 
     if args.json:
         _print_json(payload)
@@ -616,7 +636,9 @@ def _add_provision_commands(sub: argparse._SubParsersAction) -> None:
         # pseekoo's Rustrak (abians7/rustrak) exposes project creation at
         # POST /api/projects, NOT the Sentry-style /api/0/projects/. Override
         # per deployment if the backend differs.
-        "--create-path", default="api/projects", help="Admin project-create path"
+        "--create-path",
+        default="api/projects",
+        help="Admin project-create path",
     )
     rustrak.set_defaults(func=cmd_provision_rustrak)
 
