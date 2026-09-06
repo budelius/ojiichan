@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import time
 import types
@@ -124,6 +125,14 @@ def test_expired_disk_cache_refetches(monkeypatch: pytest.MonkeyPatch) -> None:
     assert fake.list_calls == 2
 
 
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason=(
+        "POSIX mode bits only. os.chmod cannot express this on Windows, so the "
+        "secret cache is left at whatever the directory ACL grants -- a real gap, "
+        "not a test artefact, and one this assertion cannot cover."
+    ),
+)
 def test_disk_cache_file_is_user_only(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = FakeVaultClient({"ojiichan/bugsink-host": "vault-host"})
     _install_fake_locke(monkeypatch, fake)
