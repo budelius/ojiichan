@@ -107,12 +107,41 @@ the application's public `/health` endpoint, and the Obachan deployment result.
 A local Kubernetes control-plane timeout does not invalidate those checks. See
 [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for the exact boundary and commands.
 
+## OpenBao seal state
+
+```bash
+ojiichan verify --backend openbao
+KUBECONFIG=~/.kube/obachan-prod1 ojiichan verify --backend openbao --json
+```
+
+A sealed OpenBao member is a silent failure. The pod stays `1/1 Ready` — its
+readiness probe answers on a sealed node — and while another member holds the
+lease the cluster keeps serving, so nothing alerts. What degrades is secret
+syncing: ExternalSecrets refreshing through the sealed member fail, and the
+workloads depending on them drift until someone happens to need a value.
+`openbao-0` on obachan-prod2 sat sealed until an unrelated operator command
+returned `Vault is sealed`.
+
+Members are discovered with `kubectl` in the current context and read with
+`bao status`, so there is no address list to maintain — pod IPs change on every
+restart, and a stale list is a monitor that checks members which no longer
+exist. Set `OJIICHAN_OPENBAO_NAMESPACE` (default `openbao`) or
+`OJIICHAN_KUBE_CONTEXT` to aim it elsewhere.
+
+Running inside a cluster, set `OJIICHAN_OPENBAO_ADDRS` to a comma-separated
+list of member addresses and it probes `/v1/sys/health` over HTTP instead. One
+address per **pod**: a load-balanced address hides exactly the condition being
+looked for, since one sealed member behind two healthy ones still answers 200.
+
+A member that could not be probed reports `unknown`, never `ok`.
+
 ## CLI
 
 ```bash
 ojiichan verify --project facts-production --backend elk --backend rustrak \
   --url https://facts.stozn.ai/health --json
 ojiichan health --hours 6
+ojiichan verify --backend openbao --json   # seal state of every OpenBao member
 ojiichan health --project halp                  # uses halp's project-scoped vault config
 ojiichan health --project halp --backend elk --backend rustrak
 ojiichan dashboard --limit 10

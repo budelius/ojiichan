@@ -13,6 +13,7 @@ from .bugsink import check_bugsink
 from .credentials import project_scope
 from .elk import check_elk
 from .obachan_backend import check_obachan
+from .openbao import check_openbao
 from .rustrak import check_rustrak
 from .scaleway import check_scaleway
 
@@ -23,6 +24,7 @@ BACKEND_CHECKS: dict[str, BackendCheck] = {
     "rustrak": check_rustrak,
     "bugsink": check_bugsink,
     "obachan": check_obachan,
+    "openbao": check_openbao,
     "scaleway": check_scaleway,
 }
 DEFAULT_VERIFY_BACKENDS = ("elk", "rustrak")
