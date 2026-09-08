@@ -29,8 +29,8 @@ from ..config import tls_verify
 from . import vault_write
 from .base import ProvisionResult, ProvisionStep, run_steps
 
-#: Sentry-compatible default; override per deployment when the API differs.
-DEFAULT_CREATE_PATH = "api/0/projects/"
+#: Rustrak's project-management endpoint; override when a deployment differs.
+DEFAULT_CREATE_PATH = "api/projects"
 
 
 @dataclass
@@ -54,6 +54,8 @@ def _first(payload: dict[str, Any], *keys: str) -> str | None:
         value = payload.get(key)
         if isinstance(value, str) and value:
             return value
+        if isinstance(value, int) and not isinstance(value, bool):
+            return str(value)
     return None
 
 
@@ -63,7 +65,11 @@ class RustrakProvisioner:
     ) -> None:
         self.c = config
         self.dsn = config.dsn
-        self.api_token = config.api_token
+        # Rustrak 0.2.x returns a DSN and numeric project id, but not another
+        # API token. Its bearer token is user-scoped and is also the token used
+        # for project/issue reads, so retain the supplied admin token unless a
+        # distinct runtime token was provided explicitly.
+        self.api_token = config.api_token or config.admin_token
         self.project_id = config.project_id
         self._client = client
         if config.admin_url and client is None:
@@ -81,13 +87,7 @@ class RustrakProvisioner:
     def _admin_mode(self) -> bool:
         return bool(self.c.admin_url and self.c.admin_token)
 
-    def _create_project(self) -> str:
-        if self._client is None:  # pragma: no cover - guarded by _admin_mode
-            raise RuntimeError("no admin client configured")
-        body = {"name": self.c.project, "slug": self.c.project}
-        resp = self._client.post(self.c.create_path, json=body)
-        resp.raise_for_status()
-        data = resp.json() if resp.content else {}
+    def _capture_project(self, data: dict[str, Any]) -> None:
         keys = data.get("keys")
         first_key = keys[0] if isinstance(keys, list) and keys else {}
         self.dsn = (
@@ -96,7 +96,54 @@ class RustrakProvisioner:
             or _first(first_key, "dsn", "public")
         )
         self.api_token = self.api_token or _first(data, "token", "api_token", "authToken")
-        self.project_id = self.project_id or _first(data, "id", "slug", "project_id")
+        self.project_id = self.project_id or _first(data, "id", "project_id", "slug")
+
+    def _project_exists(self) -> bool:
+        if self._client is None:  # pragma: no cover - guarded by _admin_mode
+            return False
+        page = 1
+        while True:
+            resp = self._client.get(
+                self.c.create_path.rstrip("/"), params={"page": page, "per_page": 100}
+            )
+            resp.raise_for_status()
+            payload = resp.json() if resp.content else {}
+            if isinstance(payload, list):
+                items = payload
+                total_pages = page
+            elif isinstance(payload, dict):
+                items = payload.get("items") or payload.get("projects") or []
+                try:
+                    total_pages = int(payload.get("total_pages") or page)
+                except (TypeError, ValueError):
+                    total_pages = page
+            else:
+                items = []
+                total_pages = page
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("slug") == self.c.project:
+                    self._capture_project(item)
+                    if not self.dsn:
+                        raise RuntimeError(
+                            f"Rustrak project {self.c.project} exists but its DSN was not returned"
+                        )
+                    return True
+            if page >= total_pages:
+                return False
+            page += 1
+
+    def _create_project(self) -> str:
+        if self._client is None:  # pragma: no cover - guarded by _admin_mode
+            raise RuntimeError("no admin client configured")
+        body = {"name": self.c.project, "slug": self.c.project}
+        resp = self._client.post(self.c.create_path, json=body)
+        resp.raise_for_status()
+        data = resp.json() if resp.content else {}
+        if not isinstance(data, dict):
+            raise RuntimeError("project created but Rustrak returned a non-object response")
+        self._capture_project(data)
         if not self.dsn:
             raise RuntimeError(
                 "project created but no DSN found in response; pass --dsn explicitly "
@@ -110,9 +157,7 @@ class RustrakProvisioner:
                 ProvisionStep(
                     name="create_project",
                     description=f"Rustrak project {self.c.project} via admin API",
-                    # No cheap idempotency probe across deployments; create-or-replace
-                    # semantics live server-side. Treat as always-apply.
-                    check=None,
+                    check=self._project_exists,
                     apply=self._create_project,
                 )
             ]
