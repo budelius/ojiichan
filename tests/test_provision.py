@@ -221,6 +221,102 @@ def test_rustrak_register_only_dry_run():
     assert result.steps[0].status == "would-create"
 
 
+def test_rustrak_admin_create_uses_live_api_shape_and_numeric_id(monkeypatch):
+    requests: list[tuple[str, str]] = []
+    stored: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append((request.method, request.url.path))
+        if request.method == "GET":
+            return httpx.Response(
+                200,
+                json={"items": [], "page": 1, "total_pages": 1},
+            )
+        return httpx.Response(
+            201,
+            json={
+                "id": 42,
+                "name": "Forest Ops",
+                "slug": "forest-ops",
+                "dsn": "https://key@ingest.rustrak.example/42",
+            },
+        )
+
+    class FakeVault:
+        def set_secret(self, path, value, *, username=None, uri=None, notes=None):
+            stored[path] = value
+            return "created"
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://rustrak.example"
+    )
+    monkeypatch.setattr(vault_write, "connect", lambda: FakeVault())
+    provisioner = RustrakProvisioner(
+        RustrakProvisionConfig(
+            project="forest-ops",
+            admin_url="https://rustrak.example",
+            admin_token="admin-token",
+        ),
+        client=client,
+    )
+
+    result = provisioner.provision()
+
+    assert result.ok and result.created
+    assert requests == [("GET", "/api/projects"), ("POST", "/api/projects")]
+    assert stored["ojiichan/projects/forest-ops/rustrak/project-id"] == "42"
+    assert stored["ojiichan/projects/forest-ops/rustrak/api-token"] == "admin-token"
+    assert stored["ojiichan/projects/forest-ops/sentry-dsn"].endswith("/42")
+
+
+def test_rustrak_existing_project_is_idempotent_and_refreshes_vault(monkeypatch):
+    methods: list[str] = []
+    stored: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        methods.append(request.method)
+        return httpx.Response(
+            200,
+            json={
+                "items": [
+                    {
+                        "id": 42,
+                        "name": "Forest Ops",
+                        "slug": "forest-ops",
+                        "dsn": "https://key@ingest.rustrak.example/42",
+                    }
+                ],
+                "page": 1,
+                "total_pages": 1,
+            },
+        )
+
+    class FakeVault:
+        def set_secret(self, path, value, *, username=None, uri=None, notes=None):
+            stored[path] = value
+            return "updated"
+
+    client = httpx.Client(
+        transport=httpx.MockTransport(handler), base_url="https://rustrak.example"
+    )
+    monkeypatch.setattr(vault_write, "connect", lambda: FakeVault())
+    provisioner = RustrakProvisioner(
+        RustrakProvisionConfig(
+            project="forest-ops",
+            admin_url="https://rustrak.example",
+            admin_token="admin-token",
+        ),
+        client=client,
+    )
+
+    result = provisioner.provision()
+
+    assert result.ok and not result.created
+    assert result.steps[0].status == "exists"
+    assert methods == ["GET"]
+    assert stored["ojiichan/projects/forest-ops/rustrak/project-id"] == "42"
+
+
 # --- OTel provisioner -------------------------------------------------------
 def test_otel_requires_endpoint():
     result = OtelProvisioner(

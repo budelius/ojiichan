@@ -7,6 +7,9 @@ versioning; release dates use ISO 8601.
 
 ### Fixed
 
+- Make Rustrak project provisioning match the live `api/projects` response: check
+  by slug before creating, accept numeric project IDs, and retain the supplied
+  bearer token for project-scoped issue reads when creation returns no token.
 - Send HTTP basic auth on the `otlp` transport, matching `es` and `logstash`.
   Obachan's Data Prepper `otel_logs_source` authenticates the shared `ojiichan`
   ingest identity with basic auth, so switching `ELK_TRANSPORT` from `logstash`

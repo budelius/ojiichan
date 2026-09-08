@@ -229,15 +229,11 @@ ojiichan provision all --project m3rp-api \
 
 ## 10. TODO(agent) — remaining work
 
-1. **Rustrak admin API response validation**: project creation now defaults to
-   Rustrak's `POST /api/projects`; confirm all live response variants for DSN and
-   token fields, then tighten `_create_project`. Register-only mode remains the
-   safest fallback when an installation differs.
-2. **OpenSearch reachability preflight**: optional `doctor`-style check that the
+1. **OpenSearch reachability preflight**: optional `doctor`-style check that the
    admin URL/creds work before walking steps (clearer error than a mid-run 401).
-3. **Rotation**: `--rotate` to force a new scoped password and re-store it.
-4. **Tests against a live OpenSearch** in `tests/e2e/` (mirror obachan's e2e bash
+2. **Rotation**: `--rotate` to force a new scoped password and re-store it.
+3. **Tests against a live OpenSearch** in `tests/e2e/` (mirror obachan's e2e bash
    pattern) — current tests use `httpx.MockTransport`.
-5. **Seed helper**: a small `obachan`-side step (or `ojiichan provision seed-admin`)
+4. **Seed helper**: a small `obachan`-side step (or `ojiichan provision seed-admin`)
    that writes the platform admin connection to `elk/admin-*` so §1 setup is itself
    one command.
