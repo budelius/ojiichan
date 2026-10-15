@@ -124,7 +124,9 @@ pub fn log_event(
         .unwrap_or(event_type)
         .to_string();
 
-    document.insert("@timestamp".into(), chrono::Utc::now().to_rfc3339().into());
+    let event_time = chrono::Utc::now();
+    document.insert("@timestamp".into(), event_time.to_rfc3339().into());
+    document.insert("topic".into(), topic.unwrap_or(event_type).into());
     document.insert("event_type".into(), event_type.into());
     document.insert("operation".into(), operation.into());
     document.insert("level".into(), level.into());
@@ -134,7 +136,7 @@ pub fn log_event(
     }
 
     let prefix = env_var("ELASTICSEARCH_INDEX_PREFIX").unwrap_or_else(|| "app".to_string());
-    let index = format!("{prefix}-{}", topic.unwrap_or(event_type));
+    let index = format!("{prefix}-{}-{}", topic.unwrap_or(event_type), event_time.format("%Y-%m-%d"));
     let document = serde_json::Value::Object(document);
 
     match elk_transport().as_str() {

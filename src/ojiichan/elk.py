@@ -57,7 +57,8 @@ class ElkClient:
         return self._client
 
     def index_name(self, topic: str | None = None) -> str:
-        return f"{self.config.index_prefix}-{topic}" if topic else self.config.index_prefix
+        prefix = f"{self.config.index_prefix}-{topic}" if topic else self.config.index_prefix
+        return f"{prefix}-{datetime.now(UTC):%Y-%m-%d}"
 
     def log_event(
         self,
@@ -85,6 +86,7 @@ class ElkClient:
             "operation": payload.get("operation") or event_type,
             "level": level,
             "service": self.service,
+            "topic": topic or event_type,
             "hostname": socket.gethostname(),
             **payload,
         }

@@ -35,6 +35,7 @@ def test_render_typescript_contains_expected_files() -> None:
     assert "flushSentry" in sentry
     assert "/_doc" in files["src/lib/elk.ts"]
     assert "process.env" in files["src/lib/config.ts"]
+    assert "eventTime.slice(0, 10)" in files["src/lib/elk.ts"]
 
 
 def test_render_rust_contains_module() -> None:
@@ -44,6 +45,7 @@ def test_render_rust_contains_module() -> None:
     assert "pub fn init_sentry" in body
     assert "pub fn log_event" in body
     assert "_doc" in body
+    assert 'event_time.format("%Y-%m-%d")' in body
 
 
 def test_render_swift_contains_expected_files() -> None:
@@ -54,6 +56,7 @@ def test_render_swift_contains_expected_files() -> None:
     assert "func captureException" in sentry
     assert "func flushSentry" in sentry
     assert "_doc" in files["Sources/Observability/Elk.swift"]
+    assert "formatter.formatOptions = [.withFullDate]" in files["Sources/Observability/Elk.swift"]
     assert "ProcessInfo.processInfo.environment" in files["Sources/Observability/Config.swift"]
 
 

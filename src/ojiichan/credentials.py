@@ -46,6 +46,9 @@ VAULT_PROJECT_ENV = "OJIICHAN_VAULT_PROJECT"
 # path so onboarding one service does not overwrite another service's writer
 # creds.
 SECRET_MAP: dict[str, str] = {
+    "ELASTICSEARCH_READ_HOST": "elk/read-host",
+    "ELASTICSEARCH_READ_USERNAME": "elk/read-username",
+    "ELASTICSEARCH_READ_PASSWORD": "elk/read-password",
     "ELASTICSEARCH_HOST": "elk/host",
     "ELASTICSEARCH_USERNAME": "elk/username",
     "ELASTICSEARCH_PASSWORD": "elk/password",

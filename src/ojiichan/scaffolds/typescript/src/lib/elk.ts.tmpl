@@ -33,8 +33,9 @@ export async function logEvent(
   const payload: Record<string, unknown> = { ...data };
   for (const key of opts.redactKeys ?? []) delete payload[key];
 
+  const eventTime = new Date().toISOString();
   const document: Record<string, unknown> = {
-    "@timestamp": new Date().toISOString(),
+    "@timestamp": eventTime,
     event_type: eventType,
     operation: (payload.operation as string | undefined) ?? eventType,
     level,
@@ -44,7 +45,9 @@ export async function logEvent(
   if (opts.subtype) document.subtype = opts.subtype;
   if (opts.failure !== undefined) document.failure = opts.failure;
 
-  const index = `${cfg.indexPrefix}-${opts.topic ?? eventType}`;
+  document.topic = opts.topic ?? eventType;
+  // Index-age retention must not delete recent events in an old static index.
+  const index = `${cfg.indexPrefix}-${opts.topic ?? eventType}-${eventTime.slice(0, 10)}`;
   const log = opts.failure ? console.error : console.log;
 
   const target = elkWriteTarget(cfg);

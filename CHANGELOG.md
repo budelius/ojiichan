@@ -5,6 +5,17 @@ versioning; release dates use ISO 8601.
 
 ## [Unreleased]
 
+### Diagnostic log reads
+
+- `logs --backend elk` now requires `--project` and separate read credentials
+  (or explicit `--read-as-admin`); shared writer credentials are never silently reused.
+- Added exact time windows, room/account-hash/correlation filters, scoped direct
+  and OTLP queries, historical coverage bounds, and MCP `diagnostic_logs`.
+- Query/authentication failures and incomplete backend results are explicit errors,
+  not zero-match successes. See `docs/DIAGNOSTIC_LOGS.md` for migration.
+- Python and generated Swift/TypeScript/Rust emitters use UTC daily indices so
+  index-age retention cannot wipe new events from an old continuously reused index.
+
 ### Fixed
 
 - Send HTTP basic auth on the `otlp` transport, matching `es` and `logstash`.

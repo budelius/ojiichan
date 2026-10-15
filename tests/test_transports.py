@@ -56,7 +56,8 @@ def test_logstash_transport_posts_document(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert client.log_event("login_ok", {"operation": "login"}, topic="auth") is True
     assert cap.url == "http://ls:8080"
-    assert cap.json["index"] == "app-auth"  # index travels as a field for pipeline routing
+    assert cap.json["index"] == f"app-auth-{cap.json['@timestamp'][:10]}"
+    assert cap.json["topic"] == "auth"  # daily index travels with the document for routing
     assert cap.json["event_type"] == "login_ok"
     assert cap.json["service"] == "svc"
 

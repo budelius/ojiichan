@@ -104,6 +104,56 @@ def elk_logs(
 
 
 @mcp.tool()
+def diagnostic_logs(
+    project: str,
+    since: str | None = None,
+    until: str | None = None,
+    hours: int = 24,
+    limit: int = 50,
+    room_id: str | None = None,
+    user_hash: str | None = None,
+    correlation_id: str | None = None,
+    services: list[str] | None = None,
+    storage: str = "both",
+    read_as_admin: bool = False,
+    topic: str | None = None,
+    failures_only: bool = False,
+) -> dict[str, Any]:
+    """Read scoped direct/OTLP logs with exact windows and historical coverage.
+
+    Requires read credentials; operator admin access is explicit, never automatic.
+    Unlike legacy elk_logs, query failures are not indistinguishable from empty results.
+    """
+    from ojiichan.diagnostic_logs import DiagnosticInputError, query_diagnostics
+
+    try:
+        with project_scope(project):
+            return query_diagnostics(
+                project,
+                since=since,
+                until=until,
+                hours=hours,
+                limit=limit,
+                room_id=room_id,
+                user_hash=user_hash,
+                correlation_id=correlation_id,
+                services=services,
+                storage=storage,
+                admin=read_as_admin,
+                topic=topic,
+                failures_only=failures_only,
+            )
+    except Exception as exc:
+        return {
+            "status": "query_failed",
+            "error_type": type(exc).__name__,
+            "message": str(exc)
+            if isinstance(exc, DiagnosticInputError)
+            else "Log query failed; check read permissions, endpoint, TLS and availability.",
+        }
+
+
+@mcp.tool()
 def emit_elk_event(
     event_type: str,
     data: dict[str, Any] | None = None,

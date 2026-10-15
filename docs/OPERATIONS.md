@@ -58,6 +58,13 @@ The Python library is also a supported programmatic interface. Ojiichan does
 **not currently ship a hosted HTTP diagnostics API**; “use the Ojiichan API” means
 use its CLI, MCP tools, or Python API instead of entering the workload.
 
+## Investigating historical logs
+
+Prefer `ojiichan logs --project <service>` and MCP `diagnostic_logs` for scoped
+read credentials, exact time windows, direct/OTLP coverage and identifier filters.
+See [DIAGNOSTIC_LOGS.md](DIAGNOSTIC_LOGS.md) for the read-identity migration,
+explicit operator-admin opt-in, and daily-index retention behavior.
+
 ## Scope retained outside Ojiichan
 
 CI pipeline and Obachan deployment status remain provider/platform API concerns

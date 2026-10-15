@@ -279,6 +279,85 @@ def cmd_logs(args: argparse.Namespace) -> int:
 def _cmd_logs(args: argparse.Namespace) -> int:
     backend = getattr(args, "backend", "elk")
 
+    if backend == "elk":
+        from .diagnostic_logs import DiagnosticInputError, query_diagnostics
+
+        try:
+            if not getattr(args, "project", None):
+                raise DiagnosticInputError(
+                    "ELK diagnostic reads require --project to avoid querying another service"
+                )
+            payload = query_diagnostics(
+                args.project,
+                hours=args.hours,
+                limit=args.limit,
+                since=getattr(args, "since", None),
+                until=getattr(args, "until", None),
+                room_id=getattr(args, "room_id", None),
+                user_hash=getattr(args, "user_hash", None),
+                correlation_id=getattr(args, "correlation_id", None),
+                services=getattr(args, "service", None),
+                storage=getattr(args, "storage", "both"),
+                admin=getattr(args, "read_as_admin", False),
+                topic=args.topic,
+                source=args.source,
+                failures_only=args.failures_only,
+            )
+        except Exception as exc:
+            # Backend exception text may contain URLs, query payloads or credentials.
+            message = (
+                str(exc)
+                if isinstance(exc, DiagnosticInputError)
+                else ("Log query failed; check read permissions, endpoint, TLS and availability.")
+            )
+            failure = {
+                "status": "query_failed",
+                "error_type": type(exc).__name__,
+                "message": message,
+            }
+            if args.json:
+                _print_json(failure)
+            else:
+                print(f"ELK error: {message} ({type(exc).__name__})", file=sys.stderr)
+            return 1
+        if args.json:
+            _print_json(payload)
+        else:
+            print(
+                f"ELK project={args.project} status={payload['status']} "
+                f"matches={payload['total']} showing={len(payload['entries'])}"
+            )
+            for bound in payload["coverage"]:
+                print(f"  {bound['storage']} available: {bound['oldest']} .. {bound['newest']}")
+            for entry in payload["entries"]:
+                doc = entry["source"]
+                print(
+                    f"  [{entry['timestamp']}] {entry['index']} "
+                    f"{doc.get('event_type') or doc.get('body') or doc.get('operation', '?')}"
+                )
+            print(payload["coverage_note"])
+        return 0
+
+    if (
+        any(
+            getattr(args, key, None)
+            for key in (
+                "since",
+                "until",
+                "room_id",
+                "user_hash",
+                "correlation_id",
+                "service",
+                "read_as_admin",
+            )
+        )
+        or getattr(args, "storage", "both") != "both"
+    ):
+        print(
+            "Exact-window/identifier/read-identity options require --backend elk", file=sys.stderr
+        )
+        return 1
+
     if backend == "obachan":
         # ObachanLogsClient.query_logs returns list[dict] rather than a tuple,
         # so it is handled as a separate code path.
@@ -701,9 +780,25 @@ def build_parser() -> argparse.ArgumentParser:
     logs.add_argument(
         "--project", help="Project vault scope used before resolving backend credentials"
     )
+    logs.add_argument("--since", help="Inclusive ISO-8601 start with timezone (ELK)")
+    logs.add_argument("--until", help="Inclusive ISO-8601 end with timezone (ELK)")
+    logs.add_argument("--room-id", help="Exact Matrix room identifier (ELK)")
+    logs.add_argument("--user-hash", help="Exact pseudonymous account hash (ELK)")
+    logs.add_argument("--correlation-id", help="Exact operation correlation identifier (ELK)")
+    logs.add_argument(
+        "--service", action="append", help="OTLP service name; repeatable, defaults to project"
+    )
+    logs.add_argument("--storage", choices=["both", "direct", "otlp"], default="both")
+    logs.add_argument(
+        "--read-as-admin",
+        action="store_true",
+        help="Explicitly use operator admin read credentials",
+    )
     logs.add_argument("--hours", type=int, default=24)
     logs.add_argument("--limit", type=int, default=50)
-    logs.add_argument("--topic", help="Substring/line filter (Loki: |= topic)")
+    logs.add_argument(
+        "--topic", help="Index topic prefix (direct), topic attribute (OTLP), line filter (Loki)"
+    )
     logs.add_argument("--source", help="ELK source field, or Scaleway resource_name (function)")
     logs.add_argument("--failures-only", action="store_true")
     logs.add_argument("--json", action="store_true")

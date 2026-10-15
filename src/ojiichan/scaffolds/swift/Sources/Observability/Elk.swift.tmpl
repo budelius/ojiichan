@@ -50,7 +50,9 @@ public func logEvent(
     for key in options.redactKeys { payload.removeValue(forKey: key) }
 
     var document = payload
-    document["@timestamp"] = ISO8601DateFormatter().string(from: Date())
+    let eventTime = Date()
+    document["@timestamp"] = ISO8601DateFormatter().string(from: eventTime)
+    document["topic"] = options.topic ?? eventType
     document["event_type"] = eventType
     document["operation"] = (payload["operation"] as? String) ?? eventType
     document["level"] = options.level
@@ -58,7 +60,10 @@ public func logEvent(
     if let subtype = options.subtype { document["subtype"] = subtype }
     if let failure = options.failure { document["failure"] = failure }
 
-    let index = "\(cfg.indexPrefix)-\(options.topic ?? eventType)"
+    let formatter = ISO8601DateFormatter()
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.formatOptions = [.withFullDate]
+    let index = "\(cfg.indexPrefix)-\(options.topic ?? eventType)-\(formatter.string(from: eventTime))"
 
     func logLocally(_ suffix: String = "") {
         FileHandle.standardError.write(
